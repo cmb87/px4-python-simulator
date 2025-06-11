@@ -109,7 +109,9 @@ if __name__ == "__main__":
         z = sensors(t, y, u, wind, P)
         xdot = dynamics(t, y, P, tau)
         
-        zall.append(z["magnetometer"])  # Store the sensor data for later analysis
+
+        print(z["gps"])
+        zall.append(z["gps"])  # Store the sensor data for later analysis
         yall.append(y.copy())  # Store the state for later analysis
         tall.append(t)
 

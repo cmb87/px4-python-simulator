@@ -12,7 +12,7 @@ def forces(t, y, u, wind, P):
     rate = y[10:13]
 
     phi, theta, psi = Quaternion.quat2Euler(quats)
-    
+
     p = rate[0] + wind[3]
     q = rate[1] + wind[4]
     r = rate[2] + wind[5]
@@ -82,6 +82,8 @@ def forces(t, y, u, wind, P):
     # Total forces and torques
     Force = F_prop + fg_b + F_aero
     Torque = T_aero + T_prop
+
+    # ToDo: Effect of r_cg missing in propeller force  and aero force!
 
     return np.concatenate([Force, Torque])
 

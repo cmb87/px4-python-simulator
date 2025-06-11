@@ -1,6 +1,8 @@
 import numpy as np
 from quaternion import Quaternion
 
+R_E = 6378137.0  # Earth radius [m]
+
 def sensors(t, y, u, wind, P):
 
     pos = y[0:3]
@@ -33,9 +35,27 @@ def sensors(t, y, u, wind, P):
     # === Barometer: altitude from NED z + noise
     baro_meas = pos[2] + P.baro_bias + np.random.normal(0, P.baro_noise_std)
 
+    # ===  GPS: convert NED → LLA using flat Earth approximation
+    
+    lat0 = np.deg2rad(P.gps_origin['lat'])
+    lon0 = np.deg2rad(P.gps_origin['lon'])
+
+
+    d_north, d_east, d_down = pos + np.random.normal(0, P.gps_pos_noise_std, 3)
+    delta_lat = d_north / R_E
+    delta_lon = d_east / (R_E * np.cos(lat0))
+
+    lat = np.rad2deg(lat0 + delta_lat)
+    lon = np.rad2deg(lon0 + delta_lon)
+    alt = P.gps_origin['alt'] - d_down
+
+    gps_meas = np.array([lat, lon, alt]) 
+
+
     return {
         'accelerometer': acc_meas,
         'gyroscope': gyro_meas,
         'magnetometer': mag_meas,
         'barometer': baro_meas,
+        'gps': gps_meas  # [lat, lon, alt]
     }
