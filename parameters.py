@@ -12,14 +12,25 @@ def Smtrx(v):
 class Parameters:
     def __init__(self):
 
-        self.rho = 1.225  # Air density at sea level in kg/m^3
-
         self.r_cg = [0, 0, 0]
         self.mass = 3.364
+
+        self.rho = 1.225  # Air density at sea level in kg/m^3
         self.Jx = 1.229
         self.Jy = 0.1702
         self.Jz = 0.8808
         self.Jxz = 0.9343
+
+        # Inertia matrix
+        self.I_cg = np.array([
+            [self.Jx, 0, -self.Jxz],
+            [0, self.Jy, 0],
+            [-self.Jxz, 0, self.Jz]
+        ])
+
+        # Inverse inertia matrix
+        self.I_cg_inv = np.linalg.inv(self.I_cg)
+
 
         self.S_wing = 0.75
         self.b = 2.1
@@ -84,23 +95,15 @@ class Parameters:
         self.gyro_noise_std = 0.001  # rad/s
         self.mag_noise_std = 0.005   # Gauss or similar
         self.baro_noise_std = 0.1    # meters
+        self.gps_pos_noise_std = np.array([1.5, 1.5, 3.0]) # [lat, lon, alt] noise std dev in meters
         
-        # Inertia matrix
-        self.I_cg = np.array([
-            [self.Jx, 0, -self.Jxz],
-            [0, self.Jy, 0],
-            [-self.Jxz, 0, self.Jz]
-        ])
+        self.gps_origin = {
+            'lat': 47.397742,   # degrees
+            'lon': 8.545594,    # degrees
+            'alt': 470.0        # meters
+        }
 
-        # Inverse inertia matrix
-        self.I_cg_inv = np.linalg.inv(self.I_cg)
-        
-        # Mass matrix
-        Sm_r_cg = Smtrx(self.r_cg)
-        self.M_rb = np.block([
-            [np.eye(3) * self.mass, -self.mass * Sm_r_cg],
-            [self.mass * Sm_r_cg, self.I_cg]
-        ])
+
 
 if __name__ == "__main__":
     P = Parameters()
