@@ -71,7 +71,20 @@ class Parameters:
         self.C_n_delta_r = 0
 
         self.gravity = 9.81  # Make sure to define gravity if needed in the rest of your code
+        self.magnetic_ned = np.array([0.21523, 0.00312, 0.42741])  # Example NED unit vector (Earth magnetic field)
 
+        # Sensor biases
+        self.accel_bias = np.array([0.01, -0.01, 0.02])
+        self.gyro_bias = np.array([0.005, -0.003, 0.002])
+        self.mag_bias = np.array([0.01, 0.01, 0.01])
+        self.baro_bias = 0.5  # meters
+
+        # Sensor noise std dev
+        self.accel_noise_std = 0.02  # m/s²
+        self.gyro_noise_std = 0.001  # rad/s
+        self.mag_noise_std = 0.005   # Gauss or similar
+        self.baro_noise_std = 0.1    # meters
+        
         # Inertia matrix
         self.I_cg = np.array([
             [self.Jx, 0, -self.Jxz],

@@ -34,33 +34,57 @@ def dynamics(t, y, P, tau):
     Mgf = Mfg.T
     Momega = MOmega(Omega)
 
-    # 3.) Accleration
-    gravityForceBf = np.dot(Mfg, np.asarray([0, 0, P.mass * P.gravity]))  # Gravity in body frame
-    accelBf = tau[0:3] / P.mass  + gravityForceBf - np.cross(Omega,vel)
 
-    # 4.) Angular Acceleration
+    # === Transform velocity to NED frame
+    vel_ned = Mgf @ vel
+
+    # === Compute gravity in body frame
+    gravityForceBf = np.dot(Mfg, np.array([0, 0, P.mass * P.gravity]))
+
+    # === Acceleration in body frame
+    body_force = tau[0:3] + gravityForceBf
+    accelBf = body_force / P.mass - np.cross(Omega, vel)
+
+    # === Convert body acceleration to NED frame
+    accel_ned = Mgf @ accelBf
+
+    # === Simple ground contact condition
+    z_ground = 0.0
+    if pos[2] >= z_ground:
+        print("Ground contact detected, setting vertical velocity and acceleration to zero.")
+        if accel_ned[2] > 0:  # Trying to fall
+            accel_ned[2] = 0.0
+            accelBf = Mfg @ accel_ned  # Reproject back to body frame
+
+        if vel_ned[2] > 0:  # Currently falling
+            vel_ned[2] = 0.0
+            vel = Mfg @ vel_ned  # Reproject back to body frame
+
+        pos[2] = z_ground
+
+    # ===  Angular Acceleration
     aux1 = np.dot(P.I_cg, Omega)
     aux2 =  tau[3:] - np.cross(Omega, aux1)
     rotAccelBf = np.dot(P.I_cg_inv, aux2)
 
 
-    # 1.) Position
+    # ===  Position
     vel_ned = np.matmul(Mgf, vel) # Erdfest ned
 
-    # 2.) Drehung
+    # ===  Drehung
     quaternionsDot = 0.5 * np.dot(Momega, quaternions)
 
-    xdot = np.concatenate((vel_ned, quaternionsDot, accelBf, rotAccelBf))
-
-    return xdot
+    return np.concatenate((vel_ned, quaternionsDot, accelBf, rotAccelBf))
 
 
 
 if __name__ == "__main__":
 
+    import matplotlib.pyplot as plt
 
     from parameters import Parameters
     from forces import forces
+    from sensors import sensors
 
     P = Parameters()  # Load parameters, assuming this is defined in parameters.py
 
@@ -68,6 +92,7 @@ if __name__ == "__main__":
     t = 0.0
     y = np.zeros(13)  # Initial state
     y[3] = 1.0
+    y[2] = -100.0
     y[7] = 20.0
     u = np.zeros(4)  # Example control inputs
     wind = np.zeros(6)  # Example wind vector
@@ -75,25 +100,39 @@ if __name__ == "__main__":
 
 
     yall = []
+    zall = []
+    tall = []
 
     for n in range(6000):
 
         tau = forces(t, y, u, wind, P)
+        z = sensors(t, y, u, wind, P)
         xdot = dynamics(t, y, P, tau)
         
-
+        zall.append(z["magnetometer"])  # Store the sensor data for later analysis
+        yall.append(y.copy())  # Store the state for later analysis
+        tall.append(t)
 
         y += xdot * dt  # Update state using Euler method
         t += dt
         #print(f"Time: {t:.2f}, State: {np.around(y,2)}")
 
-        print(np.around(tau,2))
+        
 
-        yall.append(y.copy())  # Store the state for later analysis
+
 
     yall = np.asarray(yall)
+    zall = np.asarray(zall)
+    tall = np.asarray(tall)
 
-    import matplotlib.pyplot as plt
+    plt.plot(tall, zall[:,0], label='Accelerometer X')
+    plt.plot(tall, zall[:,1], label='Accelerometer Y')
+    plt.plot(tall, zall[:,2], label='Accelerometer Z')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Accelerometer Reading (m/s²)')
+    plt.title('Accelerometer Readings Over Time')
+    plt.legend()
+    plt.show()
 
     print(yall.shape    )
     plt.plot(yall[:, 0], yall[:, 2], label='Position (NED)')
