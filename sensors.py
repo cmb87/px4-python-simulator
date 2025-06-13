@@ -3,12 +3,14 @@ from quaternion import Quaternion
 
 R_E = 6378137.0  # Earth radius [m]
 
-def sensors(t, y, u, wind, P):
+def sensors(t, y, ydot, u, wind, P):
 
     pos = y[0:3]
     quat = y[3:7] / np.linalg.norm(y[3:7])
     vel = y[7:10]     # body frame
     omega = y[10:13]  # body frame
+    accel = ydot[7:10]
+
 
     # === Rotation matrix: NED to body
     Mfg = Quaternion.Mfg(quat)  # Maps NED -> Body
@@ -19,7 +21,7 @@ def sensors(t, y, u, wind, P):
     gravity_body = Mfg @ gravity_ned
 
     # === Accelerometer: measures specific force
-    a_spec = (1 / P.mass) * gravity_body - np.cross(omega, vel)
+    a_spec = accel + (1 / P.mass) * gravity_body
 
     # === Gyroscope: measures angular velocity + bias + noise
     gyro_meas = omega + P.gyro_bias + np.random.normal(0, P.gyro_noise_std, 3)
@@ -33,7 +35,7 @@ def sensors(t, y, u, wind, P):
     acc_meas = a_spec + P.accel_bias + np.random.normal(0, P.accel_noise_std, 3)
 
     # === Barometer: altitude from NED z + noise
-    baro_meas = pos[2] + P.baro_bias + np.random.normal(0, P.baro_noise_std)
+    baro_meas = P.rho*P.gravity*pos[2] + P.baro_bias + np.random.normal(0, P.baro_noise_std)
 
     # ===  GPS: convert NED → LLA using flat Earth approximation
     
