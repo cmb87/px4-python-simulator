@@ -104,6 +104,11 @@ class Parameters:
         }
 
 
+        self.rail_dir_ned = np.array([np.cos(np.deg2rad(45)), 0, -np.sin(np.deg2rad(45))])  # unit vector of starting rail
+        self.rail_start_ned = np.asarray([0.0,0.0,-3.0])
+        self.left_rail = False
+        self.rail_length = 2.0
+
 
 if __name__ == "__main__":
     P = Parameters()

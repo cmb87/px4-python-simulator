@@ -451,11 +451,12 @@ while True:
     
     if vehicle != None:
         msg = vehicle.recv_match(blocking = False)
+
         if msg != None:
             n += 1
-            print(n, "<==", msg)
+            print(n, msg.id, "<==", msg)
     
-    
+           # sys.exit()
     t_abs__us += 100
     #time.sleep(1e-7)
     

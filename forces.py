@@ -3,6 +3,30 @@ from Rzyx import Rzyx
 from parameters import Parameters
 from quaternion import Quaternion
 
+
+def railForces(t, y, u, wind, P):
+
+    pos = y[0:3]            # ned
+    quaternions = y[3:7]
+    vel = y[7:10]           # in Body frame
+    Omega = y[10:13]        # Rates
+
+    rel_pos = pos - P.rail_start_ned
+    rail_dist = np.dot(rel_pos, P.rail_dir_ned)
+
+
+    rail_pull_max = 10.0 # kg
+
+    Force = rail_pull_max *P.gravity * (P.rail_length - rail_dist) * P.rail_dir_ned
+
+    Torque = np.zeros(3)
+
+    return np.concatenate([Force, Torque])
+
+
+
+
+
 def forces(t, y, u, wind, P):
 
     quats = y[3:7]
