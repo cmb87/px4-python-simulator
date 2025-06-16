@@ -82,21 +82,23 @@ class Parameters:
         self.C_n_delta_r = 0
 
         self.gravity = 9.81  # Make sure to define gravity if needed in the rest of your code
-        self.magnetic_ned = np.array([0.21523, 0.00312, 0.42741])  # Example NED unit vector (Earth magnetic field)
+        self.magnetic_ned = np.array([0.21523, 0.01, 0.43])  # Example NED unit vector (Earth magnetic field)
 
+                                               
         # Sensor biases
         self.accel_bias = np.array([0.01, -0.01, 0.02])
         self.gyro_bias = np.array([0.005, -0.003, 0.002])
-        self.mag_bias = np.array([0.01, 0.01, 0.01])
+        self.mag_bias = np.array([0.001, 0.001, 0.001])
         self.baro_bias = 0.5  # meters
 
         # Sensor noise std dev
-        self.accel_noise_std = 0.02  # m/s²
-        self.gyro_noise_std = 0.001  # rad/s
-        self.mag_noise_std = 0.005   # Gauss or similar
+        self.accel_noise_std = 0.001  # m/s²
+        self.gyro_noise_std = 0.0001  # rad/s
+        self.mag_noise_std = 0.0001   # Gauss or similar
         self.baro_noise_std = 0.1    # meters
-        self.gps_pos_noise_std = np.array([1.5, 1.5, 3.0]) # [lat, lon, alt] noise std dev in meters
-        
+        self.gps_pos_noise_std = np.array([0.001, 0.001, 0.001]) # [lat, lon, alt] noise std dev in meters
+        self.gps_vel_noise_std = np.array([0.001, 0.001, 0.001]) # [lat, lon, alt] noise std dev in meters
+
         self.gps_origin = {
             'lat': 47.397742,   # degrees
             'lon': 8.545594,    # degrees
@@ -105,7 +107,7 @@ class Parameters:
 
 
         self.rail_dir_ned = np.array([np.cos(np.deg2rad(45)), 0, -np.sin(np.deg2rad(45))])  # unit vector of starting rail
-        self.rail_start_ned = np.asarray([0.0,0.0,-3.0])
+        self.rail_start_ned = np.asarray([0.0,0.0,-3000.0])
         self.left_rail = False
         self.rail_length = 2.0
 

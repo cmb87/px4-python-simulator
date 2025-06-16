@@ -166,9 +166,11 @@ if __name__ == "__main__":
     y[3:7] = quatRail
 
     u = np.zeros(4)  # Example control inputs
-    u[3] = 0.9
+    u[3] = 0.2
     u[1] = -0.1
     wind = np.zeros(6)  # Example wind vector
+
+
     dt = 0.01  # Time step
 
 
