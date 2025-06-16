@@ -45,16 +45,18 @@ def railDynamics(t, y, P, tau):
     rel_pos = pos - P.rail_start_ned
     rail_dist = np.dot(rel_pos, P.rail_dir_ned)
 
-    # External force projection along rail direction
-    gravity = np.array([0, 0, P.mass * P.gravity])
-    force_total = tau[:3] + gravity
-    a_total = force_total / P.mass
 
-    a_total_ned = Mgf @ a_total
+    # === Compute gravity in body frame
+    gravity = np.dot(Mfg, np.array([0, 0, P.mass * P.gravity]))
 
-    a_total_rail_body = Mfg @ (np.dot(a_total_ned, P.rail_dir_ned)*P.rail_dir_ned)
+    # === Acceleration in body frame
+    body_force = tau[0:3] + gravity
+    accelBf = body_force / P.mass 
 
-    # Orientation fixed to rail (set quaternion to rail orientation)
+    # === Only linear accelerations along rail direction possible!
+    accelBf[1],accelBf[2] = 0.0,0.0
+
+    # === Orientation fixed to rail (set quaternion to rail orientation)
     quaternionsDot = np.zeros(4)
     rotAccelBf = np.zeros(3)
 
@@ -63,7 +65,7 @@ def railDynamics(t, y, P, tau):
         P.left_rail = True
         print("Rail left!")
 
-    return np.concatenate((v_rail_ned, quaternionsDot, a_total_rail_body, rotAccelBf))
+    return np.concatenate((v_rail_ned, quaternionsDot, accelBf, rotAccelBf))
 
 
 
@@ -150,12 +152,13 @@ if __name__ == "__main__":
     P = Parameters()  # Load parameters, assuming this is defined in parameters.py
 
     railPitch = np.deg2rad(45.0)
-    railYaw = np.deg2rad(0.0)
+    railYaw = np.deg2rad(230.0)
 
     quatRail = Quaternion.euler2quat(np.asarray([0.0,railPitch,railYaw]))
     P.rail_dir_ned = Quaternion.Mfg(quatRail).T @ np.asarray([1,0,0])
 
-  
+    print(P.rail_dir_ned)
+
     # Example usage
     t = 0.0
     y = np.zeros(13)  # Initial state
@@ -251,6 +254,7 @@ if __name__ == "__main__":
 
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
+        
 
         # Initial 3D object: simple body frame (x-red, y-green, z-blue)
         scale = 0.5
@@ -267,7 +271,7 @@ if __name__ == "__main__":
         ax.set_xlabel('North')
         ax.set_ylabel('East')
         ax.set_zlabel('Down')
-        ax.view_init(elev=135, azim=-135)
+        ax.view_init(elev=-16, azim=-115, roll=-177)
 
         def update(frame):
             p = pos[frame]

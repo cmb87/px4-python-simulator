@@ -19,6 +19,9 @@ def sensors(t, y, ydot, u, wind, P):
     # === Velocity in NED
     vel_ned = Mgf @ vel
 
+    print("--------")
+    print(vel_ned)
+
     # === Gravity in body frame
     gravity_ned = np.array([0, 0, P.gravity])
   
@@ -27,14 +30,14 @@ def sensors(t, y, ydot, u, wind, P):
 
   
    # a_spec = + accel -  Mfg @ gravity_ned
-    a_spec = np.asarray([accel[0], -accel[1], -accel[2]]) -  Mfg @ gravity_ned
+    a_spec = np.asarray([accel[0], accel[1], accel[2]]) -  Mfg @ gravity_ned
 
     # === Accelerometer measurement (specific force)
     acc_meas = a_spec + P.accel_bias + np.random.normal(0, P.accel_noise_std, 3)
 
     # === Gyroscope: measures angular velocity + bias + noise
    # gyro_meas = omega + P.gyro_bias + np.random.normal(0, P.gyro_noise_std, 3)
-    gyro_meas = np.asarray([omega[0], -omega[1], -omega[2]]) + P.gyro_bias + np.random.normal(0, P.gyro_noise_std, 3)
+    gyro_meas = np.asarray([omega[0], omega[1], omega[2]]) + P.gyro_bias + np.random.normal(0, P.gyro_noise_std, 3)
 
 
 
@@ -42,6 +45,7 @@ def sensors(t, y, ydot, u, wind, P):
     magnetic_ned = P.magnetic_ned
     magnetic_body = Mfg @ magnetic_ned
     mag_meas = np.asarray([magnetic_body[0], magnetic_body[1], magnetic_body[2]]) + P.mag_bias + np.random.normal(0, P.mag_noise_std, 3)
+
     #mag_meas = magnetic_body + P.mag_bias + np.random.normal(0, P.mag_noise_std, 3)
 
     # === Barometer: altitude from NED z + noise
@@ -64,8 +68,7 @@ def sensors(t, y, ydot, u, wind, P):
     alt = P.gps_origin['alt'] - d_down
 
     cog_rad = np.arctan2(vel_ned[1], vel_ned[0])  # Note: atan2(East, North)
-    cog_deg = np.degrees(cog_rad) % 360  # Wrap to [0, 360)
-
+    cog_deg = np.degrees(cog_rad) 
 
     gps_meas = np.array([lat, lon, alt,vel_ned_gps[0], vel_ned_gps[1],vel_ned_gps[2], cog_deg]) 
 
