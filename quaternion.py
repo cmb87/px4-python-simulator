@@ -53,6 +53,8 @@ class Quaternion(object):
             Rotation matrix, Mfg [3x3]
         """
 
+
+
         a, b, c, d = Z[0], Z[1], Z[2], Z[3]
 
         Mfg = [

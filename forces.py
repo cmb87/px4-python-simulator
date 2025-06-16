@@ -15,7 +15,7 @@ def railForces(t, y, u, wind, P):
     rail_dist = np.dot(rel_pos, P.rail_dir_ned)
 
 
-    rail_pull_max = 10.0 # kg
+    rail_pull_max =20.0 # kg
 
     Force = rail_pull_max *P.gravity * (P.rail_length - rail_dist) * P.rail_dir_ned
 
