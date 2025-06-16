@@ -124,7 +124,7 @@ def Update(t, y, ydot, z, u, wind, P):
     
     euler = np.rad2deg(Quaternion.quat2Euler(quat))
 
-    print("POS",np.around(pos,0),"EULER", np.around(euler,0),"MAG",np.around(z["magnetometer"],2), "ACC",np.around(z["accelerometer"],2), "GPS", np.around(z['gps'],2) )
+    print("POS",np.around(pos,0),"EULER", np.around(euler,0),"MAG",np.around(z["magnetometer"],2), "ACC",np.around(z["accelerometer"],2), "GPS", np.around(z['gps'][3:],2) )
 
 # ==================================================
 def mavlink_simulation(name, connection_string):
@@ -140,13 +140,11 @@ def mavlink_simulation(name, connection_string):
     t_boot__us  = round(t_abs__us - 30e6)
 
 
-    mode = 0
-    controls = np.zeros(16)
 
     P = Parameters()  # Load parameters, assuming this is defined in parameters.py
 
     railPitch = np.deg2rad(10)
-    railYaw = np.deg2rad(0.0)
+    railYaw = np.deg2rad(180.0)
 
     quatRail = Quaternion.euler2quat(np.asarray([0.0,railPitch,railYaw]))
     P.rail_dir_ned = Quaternion.Mfg(quatRail).T @ np.asarray([1,0,0])
@@ -158,12 +156,14 @@ def mavlink_simulation(name, connection_string):
     y[7] = 0.0 # Start speed in body dir
     y[0:3] = P.rail_start_ned
     y[3:7] = quatRail
+    wind = np.zeros(6)  # Example wind vector
 
     u = np.zeros(4)  # Example control inputs
     u[3] = 0.8
-    wind = np.zeros(6)  # Example wind vector
+    
 
-
+    mode = 0
+    controls = np.zeros(16)
 
     # Listen for MAVLink messages
     while True:
@@ -178,13 +178,13 @@ def mavlink_simulation(name, connection_string):
         elevator = np.deg2rad(30) * controls[0]
         left_aileron = controls[1]
         right_aileron = controls[2]
-        aileron = np.deg2rad(30) * 0.5*(right_aileron - left_aileron)
+        aileron = np.deg2rad(30) * 0.5*(-right_aileron + left_aileron)
 
         rudder = np.deg2rad(30) * controls[3]
         throttle = controls[4]
 
 
-        u = np.asarray([elevator,aileron,rudder,throttle])
+        u = np.asarray([-elevator,-aileron,rudder,throttle])
 
         #print(np.around(controls[:6],3), np.around(u) ) 
 
