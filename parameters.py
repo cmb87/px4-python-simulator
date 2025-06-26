@@ -19,7 +19,7 @@ class Parameters:
         self.Jx = 1.229
         self.Jy = 0.1702
         self.Jz = 0.8808
-        self.Jxz = 0.9343
+        self.Jxz = 0.9343 * 0.001
 
         # Inertia matrix
         self.I_cg = np.array([
@@ -86,18 +86,18 @@ class Parameters:
 
                                                
         # Sensor biases
-        self.accel_bias = np.array([0.01, -0.01, 0.02])
-        self.gyro_bias = np.array([0.005, -0.003, 0.002])
-        self.mag_bias = np.array([0.001, 0.001, 0.001])
+        self.accel_bias = 0*np.array([0.01, -0.01, 0.02])
+        self.gyro_bias = 0*np.array([0.005, -0.003, 0.002])
+        self.mag_bias = 0*np.array([0.001, 0.001, 0.001])
         self.baro_bias = 0.5  # meters
 
         # Sensor noise std dev
-        self.accel_noise_std = 0.001  # m/s²
-        self.gyro_noise_std = 0.0001  # rad/s
-        self.mag_noise_std = 0.0001   # Gauss or similar
-        self.baro_noise_std = 0.1    # meters
-        self.gps_pos_noise_std = np.array([0.001, 0.001, 0.001]) # [lat, lon, alt] noise std dev in meters
-        self.gps_vel_noise_std = np.array([0.001, 0.001, 0.001]) # [lat, lon, alt] noise std dev in meters
+        self.accel_noise_std = 0.00000000001  # m/s²
+        self.gyro_noise_std = 0.00000000001  # rad/s
+        self.mag_noise_std = 0.000001   # Gauss or similar
+        self.baro_noise_std = 0.01    # meters
+        self.gps_pos_noise_std = 0.0001*np.array([0.01, 0.01, 0.01]) # [lat, lon, alt] noise std dev in meters
+        self.gps_vel_noise_std = 0.0001*np.array([0.01, 0.01, 0.01]) # [lat, lon, alt] noise std dev in meters
 
         self.gps_origin = {
             'lat': 47.397742,   # degrees
@@ -107,7 +107,7 @@ class Parameters:
 
 
         self.rail_dir_ned = np.array([np.cos(np.deg2rad(45)), 0, -np.sin(np.deg2rad(45))])  # unit vector of starting rail
-        self.rail_start_ned = np.asarray([0.0,0.0,-300.0])
+        self.rail_start_ned = np.asarray([0.0,0.0,-3.0])
         self.left_rail = False
         self.rail_length = 2.0
 
