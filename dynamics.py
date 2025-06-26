@@ -70,7 +70,7 @@ def railDynamics(t, y, P, tau):
 
 
 
-def dynamics(t, y, P, tau):
+def dynamics(t, y, P, tau, z_ground = 100.0):
     """
     Computes the time derivative of the state vector y.
     
@@ -88,7 +88,8 @@ def dynamics(t, y, P, tau):
     vel = y[7:10]           # in Body frame
     Omega = y[10:13]        # Rates
 
-    quaternions /=  np.linalg.norm(quaternions)  # Normalize quaternions
+    quaternions =  quaternions / np.linalg.norm(quaternions)  # Normalize quaternions
+
 
     # Switch to full 6DOF mode if not already done
     
@@ -101,7 +102,9 @@ def dynamics(t, y, P, tau):
     vel_ned = Mgf @ vel
 
     # === Compute gravity in body frame
-    gravity = np.dot(Mfg, np.array([0, 0, P.mass * P.gravity]))
+    gravity = np.matmul(Mfg, np.array([0, 0, P.mass * P.gravity]))
+  #  gravity = np.dot(Mfg, np.array([0, 0, 0]))
+
 
     # === Acceleration in body frame
     body_force = tau[0:3] + gravity
@@ -111,28 +114,31 @@ def dynamics(t, y, P, tau):
     accel_ned = Mgf @ accelBf
 
     # === Simple ground contact condition
-    z_ground = 0.0
-    if pos[2] >= z_ground:
-       # print("Ground contact detected, setting vertical velocity and acceleration to zero.")
-        if accel_ned[2] > 0:  # Trying to fall
-            accel_ned[2] = 0.0
-            accelBf = Mfg @ accel_ned  # Reproject back to body frame
+    
+    if False:
+        if pos[2] >= z_ground:
+        # print("Ground contact detected, setting vertical velocity and acceleration to zero.")
+            if accel_ned[2] > 0:  # Trying to fall
+                accel_ned[2] = 0.0
+                accelBf = Mfg @ accel_ned  # Reproject back to body frame
 
-        if vel_ned[2] > 0:  # Currently falling
-            vel_ned[2] = 0.0
-            vel = Mfg @ vel_ned  # Reproject back to body frame
+            if vel_ned[2] > 0:  # Currently falling
+                vel_ned[2] = 0.0
+                vel = Mfg @ vel_ned  # Reproject back to body frame
 
-        pos[2] = z_ground
-        
+            pos[2] = z_ground
+            
 
     # ===  Angular Acceleration
-    aux1 = np.dot(P.I_cg, Omega)
+    aux1 = np.matmul(P.I_cg, Omega)
     aux2 =  tau[3:] - np.cross(Omega, aux1)
-    rotAccelBf = np.dot(P.I_cg_inv, aux2)
+    rotAccelBf = np.matmul(P.I_cg_inv, aux2)
 
 
     # ===  Drehung
-    quaternionsDot = 0.5 * np.dot(Momega, quaternions)
+    quaternionsDot = 0.5 * np.matmul(Momega, quaternions)
+
+  #  print( tau[3:], Omega, quaternionsDot, rotAccelBf)
 
     return np.concatenate((vel_ned, quaternionsDot, accelBf, rotAccelBf))
 
@@ -151,13 +157,12 @@ if __name__ == "__main__":
 
     P = Parameters()  # Load parameters, assuming this is defined in parameters.py
 
-    railPitch = np.deg2rad(45.0)
-    railYaw = np.deg2rad(230.0)
+    railPitch = np.deg2rad(0.0)
+    railYaw = np.deg2rad(0.0)
 
     quatRail = Quaternion.euler2quat(np.asarray([0.0,railPitch,railYaw]))
     P.rail_dir_ned = Quaternion.Mfg(quatRail).T @ np.asarray([1,0,0])
 
-    print(P.rail_dir_ned)
 
     # Example usage
     t = 0.0
@@ -169,19 +174,23 @@ if __name__ == "__main__":
     y[3:7] = quatRail
 
     u = np.zeros(4)  # Example control inputs
-    u[3] = 0.2
-    u[1] = -0.1
+    u[3] = 0.78
+    u[1] = 0.00
+
+
     wind = np.zeros(6)  # Example wind vector
 
 
-    dt = 0.01  # Time step
+    dt= 10000.0 / 1e6
 
 
     yall = []
     zall = []
     tall = []
 
-    for n in range(400):
+
+    for n in range(8000):
+
 
         tau = forces(t, y, u, wind, P)
 
@@ -195,10 +204,10 @@ if __name__ == "__main__":
             ydot = railDynamics(t, y, P, tau+tauRail)
         
 
-        z = sensors(t, y, ydot, u, wind, P)
+        z = sensors(t, y, ydot, u, wind, P, dt)
 
      #   print(z["accelerometer"])
-        zall.append(z["accelerometer"])  # Store the sensor data for later analysis
+        zall.append(z["euler"])  # Store the sensor data for later analysis
         yall.append(y.copy())  # Store the state for later analysis
         tall.append(t)
 
@@ -223,6 +232,9 @@ if __name__ == "__main__":
     plt.title('Accelerometer Readings Over Time')
     plt.legend()
     plt.show()
+
+
+
 
     plt.plot(yall[:, 0], -yall[:, 2], label='Position (NED)')
     plt.xlabel('North (m)')
