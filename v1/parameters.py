@@ -92,12 +92,12 @@ class Parameters:
         self.baro_bias = 0.5  # meters
 
         # Sensor noise std dev
-        self.accel_noise_std = 0.00000000001  # m/s²
-        self.gyro_noise_std = 0.00000000001  # rad/s
-        self.mag_noise_std = 0.000001   # Gauss or similar
-        self.baro_noise_std = 0.01    # meters
-        self.gps_pos_noise_std = 0.0001*np.array([0.01, 0.01, 0.01]) # [lat, lon, alt] noise std dev in meters
-        self.gps_vel_noise_std = 0.0001*np.array([0.01, 0.01, 0.01]) # [lat, lon, alt] noise std dev in meters
+        self.accel_noise_std = 0.0000001  # m/s²
+        self.gyro_noise_std = 0.0000001  # rad/s
+        self.mag_noise_std = 0.00000001   # Gauss or similar
+        self.baro_noise_std = 0.005    # meters
+        self.gps_pos_noise_std = 0.0001*np.array([0.001, 0.001, 0.001]) # [lat, lon, alt] noise std dev in meters
+        self.gps_vel_noise_std = 0.0001*np.array([0.001, 0.001, 0.001]) # [lat, lon, alt] noise std dev in meters
 
         self.gps_origin = {
             'lat': 47.397742,   # degrees

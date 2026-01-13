@@ -6,7 +6,7 @@ from quaternion import Quaternion
 class MagnetometerSim:
     def __init__(self,
                  pub_rate=100.0,
-                 noise_density=0.4e-3,           # [gauss / sqrt(hz)]
+                 noise_density=0.1e-3,           # [gauss / sqrt(hz)]
                  random_walk=6.4e-6,             # [gauss * sqrt(hz)]
                  bias_correlation_time=600.0,    # [s]
                  declination_rad=0.0391,         # ~2.24° for Zurich

@@ -122,17 +122,24 @@ def mavlink_simulation(name, connection_string):
 
 
             # =========== Controls to ==============
-            elevator = np.deg2rad(20) * controls[0]
+            
+
             left_aileron = controls[1]
             right_aileron = controls[2]
+
             aileron = np.deg2rad(20) * 0.5*(-right_aileron + left_aileron)
+            elevator = np.deg2rad(20) *  0.5*(+right_aileron + left_aileron)
             rudder = np.deg2rad(20) * controls[3]
             throttle = controls[0]
+
+            u = np.asarray([-elevator,-aileron,rudder,throttle])
+
+          #  print(u)
 
             advanceTime = True
             receivedActuatorControls = True
 
-            print("HIL_ACTUATOR_CONTROLS: ",  t_abs__us)
+           # print("HIL_ACTUATOR_CONTROLS: ",  t_abs__us)
         else:
             receivedActuatorControls = False
 
@@ -153,7 +160,6 @@ def mavlink_simulation(name, connection_string):
             if state["ready"]:
                 tau = forces(t, y, u, wind, P)
   
-
                 if P.left_rail:
                     ydot = dynamics(t, y, P, tau)
                 else:
@@ -170,7 +176,8 @@ def mavlink_simulation(name, connection_string):
             t += dt
             t_abs__us += int(delta_time__us)
             advanceTime = False
-            print("Advance Time: ",  t_abs__us)
+           # print("Advance Time: ",  t_abs__us)
+            #time.sleep(dt)
 
 
             
@@ -224,7 +231,6 @@ def mavlink_simulation(name, connection_string):
             fields_updated |= (1 << 12)  # HIL_SENSOR_UPDATED_TEMPERATURE
             fields_updated      = fields_updated                          # Bitmap for fields that have updated since last message, bit 0 = xacc, bit 12: temperature, bit 31: full reset of attitude/position/velocities/etc was performed in sim. (type:uint32_t)
 
-
             master.mav.hil_sensor_send(
                 time_usec           = t_abs__us,
                 xacc                = z['accelerometer'][0],
@@ -238,20 +244,23 @@ def mavlink_simulation(name, connection_string):
                 zmag                = z['magnetometer'][2],
                 abs_pressure        = 0.01*(95597 + z['barometer']["static"]), # Pa to millibar
                 diff_pressure       = 0.0,
-                pressure_alt        = z['barometer']["static"],
+                pressure_alt        = z['barometer']["pressure_alt"],
                 temperature         = 300.15,
                 fields_updated      = fields_updated    ,
                 id                  = 0            ,
             )
 
-            print("HIL_SENSOR: ",  t_abs__us)
+            #print("HIL_SENSOR: ",  t_abs__us)
         
         # =========== HIL GPS ===========
-        if niter % 400 == 0 and z:
+        if niter % 50 == 0 and z:
 
             gps = z['gps']
 
             vel = (gps[3]**2+gps[4]**2+gps[5]**2)**0.5
+            cog = np.rad2deg(np.atan2(gps[3],gps[4]))
+
+            print(cog)
 
             master.mav.hil_gps_send(
                 time_usec=t_abs__us,
@@ -264,7 +273,7 @@ def mavlink_simulation(name, connection_string):
                 vn=int(gps[3] * 100),
                 ve=int(gps[4] * 100),
                 vd=int(gps[5] * 100),
-                cog=int((0.0) * 100),
+                cog=int(cog * 100),
                 fix_type=3,
                 satellites_visible=10           # fake value
             )
