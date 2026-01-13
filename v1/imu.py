@@ -6,14 +6,14 @@ from quaternion import Quaternion
 class ADIS16448IMU:
     def __init__(self, gravity_vector=np.array([0, 0, -9.8068])):
         # Gyroscope parameters
-        self.gyro_noise_density = 2.0 * 35.0 / 3600.0 / 180.0 * np.pi
-        self.gyro_random_walk = 2.0 * 4.0 / 3600.0 / 180.0 * np.pi
+        self.gyro_noise_density =35.0 / 3600.0 / 180.0 * np.pi
+        self.gyro_random_walk =  4.0 / 3600.0 / 180.0 * np.pi
         self.gyro_bias_correlation_time = 1.0e3
         self.gyro_turn_on_bias_sigma = 0.5 / 180.0 * np.pi
 
         # Accelerometer parameters
-        self.acc_noise_density = 2.0 * 2.0e-3
-        self.acc_random_walk = 2.0 * 3.0e-3
+        self.acc_noise_density =  1.0e-3
+        self.acc_random_walk =3.0e-3
         self.acc_bias_correlation_time = 300.0
         self.acc_turn_on_bias_sigma = 20.0e-3 * 9.8
 

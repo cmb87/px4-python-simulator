@@ -170,12 +170,15 @@ def sensors(t, y, ydot, u, wind, P, dt):
     #mag_meas = magnetic_body + P.mag_bias + np.random.normal(0, P.mag_noise_std, 3)
 
     # === Barometer: altitude from NED z + noise
-    staticPressure = P.rho*P.gravity*-pos[2]
+    staticPressure = P.rho*P.gravity*(-pos[2] )  + P.baro_bias + np.random.normal(0, P.baro_noise_std)
     dynamicPressure = 0.5 * P.rho * np.linalg.norm(vel_ned)**2
 
+    pressure_alt = 408 +  staticPressure/(P.rho*P.gravity) # in m
+
     baro_meas = {
-        "static": staticPressure + P.baro_bias + np.random.normal(0, P.baro_noise_std),
-        "dynamic": dynamicPressure + np.random.normal(0, P.baro_noise_std)
+        "static": staticPressure,
+        "dynamic": dynamicPressure + np.random.normal(0, P.baro_noise_std),
+        "pressure_alt": pressure_alt
     }
 
 
