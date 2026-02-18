@@ -77,7 +77,7 @@ def mavlink_simulation(name, connection_string):
 
     P = Parameters()  # Load parameters, assuming this is defined in parameters.py
 
-    railPitch = np.deg2rad(0.0)
+    railPitch = np.deg2rad(30.0)
     railYaw = np.deg2rad(0.0)
 
     quatRail = Quaternion.euler2quat(np.asarray([0.0,railPitch,railYaw]))
@@ -121,7 +121,7 @@ def mavlink_simulation(name, connection_string):
         throttle = controls[0]
 
 
-        #u = np.asarray([-elevator,-aileron,rudder,throttle])
+        u = np.asarray([elevator,-aileron,rudder,throttle])
         #print(np.around(controls[:6],3), np.around(u) ) 
 
 
