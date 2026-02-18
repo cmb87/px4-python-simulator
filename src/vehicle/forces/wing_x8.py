@@ -1,27 +1,30 @@
 import numpy as np
 from Rzyx import Rzyx
 from parameters import Parameters
-from quaternion import Quaternion
 from base_component import SimComponentBase
 
 
 
 def forces(t, y, u, wind, P):
 
-    quats = y[3:7]
-
-
     vel = y[7:10]
     rate = y[10:13]
-
-    phi, theta, psi = Quaternion.quat2Euler(quats)
 
     p = rate[0] + wind[3]
     q = rate[1] + wind[4]
     r = rate[2] + wind[5]
     
-    elevator, aileron, rudder, throttle = u # In degrees, throttle is normalized [0, 1]
-    
+
+    leftElevon =  u[1]
+    rightElevon = u[2]
+
+    throttle = u[0]
+
+    elevator = -0.5 * (leftElevon + rightElevon) * 40.0 * 3.14/180.0
+    aileron = 0.5 * ( -leftElevon + rightElevon) * 40.0 * 3.14/180.0
+    rudder = 0.0 #; //-(control.size() > 3 ? control.get(3) : 0.0) * 10.0 * deg2rad;
+
+
     # Relative velocity
     wind_b = wind[:3]
     vel_r = vel - wind_b
@@ -34,10 +37,6 @@ def forces(t, y, u, wind, P):
 
     alpha = np.arctan2(w_r, u_r)
     beta = np.arcsin(v_r / Va)
-
-    # Gravitational force in body frame
-    fg_N = np.array([0, 0, P.mass * P.gravity])
-    fg_b = Rzyx(phi, theta, psi).T @ fg_N
 
     # Longitudinal forces
     C_L_alpha = P.C_L_0 + P.C_L_alpha * alpha
@@ -83,7 +82,7 @@ def forces(t, y, u, wind, P):
     T_prop = np.array([-P.k_T_P * (P.k_Omega * throttle)**2, 0, 0])
 
     # Total forces and torques
-    Force = F_prop + fg_b + F_aero
+    Force = F_prop + F_aero
     Torque = T_aero + T_prop
 
     # ToDo: Effect of r_cg missing in propeller force  and aero force!
