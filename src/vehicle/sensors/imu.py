@@ -6,6 +6,8 @@ from base_component import SimComponentBase
 class ADIS16448IMU(SimComponentBase):
     def __init__(self, gravity_vector=np.array([0, 0, -9.8068])):
         super().__init__()
+        self.dt = 1.0 / 250.0
+
         # Gyroscope parameters
         self.gyro_noise_density = 2.0 * 35.0 / 3600.0 / 180.0 * np.pi
         self.gyro_random_walk = 2.0 * 4.0 / 3600.0 / 180.0 * np.pi
@@ -18,6 +20,12 @@ class ADIS16448IMU(SimComponentBase):
         self.acc_bias_correlation_time = 300.0
         self.acc_turn_on_bias_sigma = 20.0e-3 * 9.8
 
+        self.acc_lpf_hz = 120.0
+        self.gyro_lpf_hz = 120.0
+        self.acc_range_mps2 = 18.0 * 9.80665
+        self.gyro_range_rps = np.deg2rad(2000.0)
+        self.enable_noise = True
+
         # Gravity vector (world frame)
         self.gravity_vector = np.array(gravity_vector)
 
@@ -27,6 +35,20 @@ class ADIS16448IMU(SimComponentBase):
 
         # Random generator
         self.rng = np.random.default_rng()
+
+        self._acc_lpf_state = np.zeros(3)
+        self._gyro_lpf_state = np.zeros(3)
+        self._acc_lpf_initialized = False
+        self._gyro_lpf_initialized = False
+
+    def set_noise(self, enabled: bool):
+        self.enable_noise = bool(enabled)
+
+    def set_biases(self, accel_bias_mps2=None, gyro_bias_rps=None):
+        if accel_bias_mps2 is not None:
+            self.acc_bias = np.asarray(accel_bias_mps2, dtype=float).reshape(3)
+        if gyro_bias_rps is not None:
+            self.gyro_bias = np.asarray(gyro_bias_rps, dtype=float).reshape(3)
         
 
     def update(self, t_us, paused):
@@ -44,26 +66,51 @@ class ADIS16448IMU(SimComponentBase):
             raise ValueError("ADIS16448IMU requires inputs: acc_body, ang_vel_body, orientation_quat")
 
         dt = self._compute_dt_s(t_us)
-        dt = max(dt, 1e-6)
-
-        # Convert quaternion to rotation matrix (world -> body)
+        if dt <= 0.0:
+            dt = self.dt
 
         R_wb = Quaternion.Mfg(orientation_quat)
 
-        # Rotate gravity from world to body frame
         gravity_body = R_wb @ self.gravity_vector
 
-        # Subtract gravity from measured acceleration
-        acc_corrected =  acc_body + gravity_body
+        # Specific force in body frame (accelerometer model)
+        specific_force_body = np.asarray(acc_body, dtype=float) + gravity_body
+        gyro_true = np.asarray(ang_vel_body, dtype=float)
 
-        # Add accelerometer noise and bias
-        acc_noisy = self._add_acc_noise(acc_corrected, dt)
+        acc_filtered = self._apply_lpf(specific_force_body, dt, self.acc_lpf_hz, "acc")
+        gyro_filtered = self._apply_lpf(gyro_true, dt, self.gyro_lpf_hz, "gyro")
 
-        # Add gyroscope noise and bias
-        gyro_noisy = self._add_gyro_noise(ang_vel_body, dt)
+        if self.enable_noise:
+            acc_meas = self._add_acc_noise(acc_filtered, dt)
+            gyro_meas = self._add_gyro_noise(gyro_filtered, dt)
+        else:
+            acc_meas = acc_filtered + self.acc_bias
+            gyro_meas = gyro_filtered + self.gyro_bias
 
-        self.last_output = (acc_noisy, gyro_noisy)
+        acc_meas = np.clip(acc_meas, -self.acc_range_mps2, self.acc_range_mps2)
+        gyro_meas = np.clip(gyro_meas, -self.gyro_range_rps, self.gyro_range_rps)
+
+        self.last_output = (acc_meas, gyro_meas)
         return self.last_output
+
+    def _apply_lpf(self, value, dt, cutoff_hz, channel):
+        tau = 1.0 / (2.0 * np.pi * max(cutoff_hz, 1e-6))
+        alpha = dt / (tau + dt)
+
+        if channel == "acc":
+            if not self._acc_lpf_initialized:
+                self._acc_lpf_state = np.asarray(value, dtype=float).copy()
+                self._acc_lpf_initialized = True
+                return self._acc_lpf_state.copy()
+            self._acc_lpf_state = self._acc_lpf_state + alpha * (np.asarray(value, dtype=float) - self._acc_lpf_state)
+            return self._acc_lpf_state.copy()
+
+        if not self._gyro_lpf_initialized:
+            self._gyro_lpf_state = np.asarray(value, dtype=float).copy()
+            self._gyro_lpf_initialized = True
+            return self._gyro_lpf_state.copy()
+        self._gyro_lpf_state = self._gyro_lpf_state + alpha * (np.asarray(value, dtype=float) - self._gyro_lpf_state)
+        return self._gyro_lpf_state.copy()
 
 
     def _add_gyro_noise(self, omega, dt):
@@ -74,7 +121,7 @@ class ADIS16448IMU(SimComponentBase):
         )
         sigma_d = self.gyro_noise_density / np.sqrt(dt)
 
-        self.gyro_bias = phi * self.gyro_bias + sigma_b * self.rng.normal(0, 1, 3)
+        self.gyro_bias = phi * self.gyro_bias + sigma_b * self.rng.normal(0.0, 1.0, 3)
         noise = sigma_d * self.rng.normal(0, 1, 3)
         return omega + self.gyro_bias + noise
 
@@ -86,7 +133,7 @@ class ADIS16448IMU(SimComponentBase):
         )
         sigma_d = self.acc_noise_density / np.sqrt(dt)
 
-        self.acc_bias = phi * self.acc_bias + sigma_b * self.rng.normal(0, 1, 3)
+        self.acc_bias = phi * self.acc_bias + sigma_b * self.rng.normal(0.0, 1.0, 3)
         noise = sigma_d * self.rng.normal(0, 1, 3)
         return acc + self.acc_bias + noise
 
