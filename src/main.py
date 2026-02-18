@@ -22,6 +22,7 @@ from visualizer.websockerPublisher import GroundTruthWebSocketPublisher
 RATE_HZ = 250
 DT_US = int(1e6 / RATE_HZ)
 HEARTBEAT_INTERVAL_US = 1_000_000
+WEBSOCKET_INTERVAL_US = 5_000_0
 SYSTEM_TIME_INTERVAL_US = 1_000_000
 GPS_START_DELAY_US = 1_000_000
 MAVLINK_MSG_ID_HIL_STATE_QUATERNION = 115
@@ -77,6 +78,7 @@ def simulation_main() -> None:
 
     sim_time_us = 0
     next_heartbeat_time_us = 0
+    next_websocket_time_us = 0
     next_system_time_us = 0
     gps_start_time_us = GPS_START_DELAY_US
     hil_state_interval_us = -1
@@ -230,21 +232,26 @@ def simulation_main() -> None:
                         0,
                     )
 
-                gt_ws.publish(
-                    {
-                        "time_usec": int(sim_time_us),
-                        "position_ned_m": [float(y[0]), float(y[1]), float(y[2])],
-                        "quaternion_wxyz": [float(y[3]), float(y[4]), float(y[5]), float(y[6])],
-                        "velocity_body_mps": [float(y[7]), float(y[8]), float(y[9])],
-                        "angular_rate_body_rps": [float(y[10]), float(y[11]), float(y[12])],
-                        "lla": {
-                            "lat_deg": float(gps[0]),
-                            "lon_deg": float(gps[1]),
-                            "alt_m": float(gps[2]),
-                        },
-                    }
-                )
+                if sim_time_us >= next_websocket_time_us:
+                    gt_ws.publish(
+                        {
+                            "time_usec": int(sim_time_us),
+                            "position_ned_m": [float(y[0]), float(y[1]), float(y[2])],
+                            "quaternion_wxyz": [float(y[3]), float(y[4]), float(y[5]), float(y[6])],
+                            "velocity_body_mps": [float(y[7]), float(y[8]), float(y[9])],
+                            "angular_rate_body_rps": [float(y[10]), float(y[11]), float(y[12])],
+                            "lla": {
+                                "lat_deg": float(gps[0]),
+                                "lon_deg": float(gps[1]),
+                                "alt_m": float(gps[2]),
+                            },
+                        }
+                    )
+                    next_websocket_time_us = sim_time_us + WEBSOCKET_INTERVAL_US
+
+
                 last_time_ran_ms = now_ms
+
 
             if sim_time_us >= next_heartbeat_time_us:
                 conn.mav.heartbeat_send(
