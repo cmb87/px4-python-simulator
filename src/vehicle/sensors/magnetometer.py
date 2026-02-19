@@ -1,6 +1,10 @@
+import logging
 import numpy as np
 from quaternion import Quaternion
 from base_component import SimComponentBase
+
+
+logger = logging.getLogger(__name__)
 
 class MagnetometerSim(SimComponentBase):
     def __init__(self,
@@ -102,11 +106,17 @@ if __name__ == "__main__":
     # Example usage
     import time
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
     sim = MagnetometerSim()
 
     for _ in range(500):
         quat = [1,0, 0, 0]  # Identity quaternion
         result = sim.simulate_step(quat)
         if result:
-            print(f"[{result['timestamp_us']}] mag (body, gauss): {result['mag_field_body_gauss']}")
+            logger.info("[%s] mag (body, gauss): %s", result["timestamp_us"], result["mag_field_body_gauss"])
         time.sleep(0.005)  # Simulate your own timing (e.g., 200 Hz loop)

@@ -1,8 +1,12 @@
+import logging
 import numpy as np
 from Rzyx import Rzyx
 from parameters import Parameters
 from quaternion import Quaternion
 from base_component import SimComponentBase
+
+
+logger = logging.getLogger(__name__)
 
 
 def railForces(t, y, u, wind, P):
@@ -49,6 +53,11 @@ class CatapultRailForceModel(SimComponentBase):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     P = Parameters()
     t = 0.0
@@ -59,4 +68,4 @@ if __name__ == "__main__":
     
     out = railForces(t, y, u, wind, P)
 
-    print(out)
+    logger.info("%s", out)

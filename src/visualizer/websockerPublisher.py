@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import threading
 from typing import Any
 
@@ -8,6 +9,8 @@ try:
     import websockets
 except ImportError:
     websockets = None
+
+logger = logging.getLogger(__name__)
 
 class GroundTruthWebSocketPublisher:
     def __init__(self, host: str, port: int):
@@ -21,7 +24,7 @@ class GroundTruthWebSocketPublisher:
 
     def start(self) -> None:
         if not self.enabled:
-            print("Ground-truth WS disabled: install 'websockets' package to enable it")
+            logger.warning("Ground-truth WS disabled: install 'websockets' package to enable it")
             return
         self._thread = threading.Thread(target=self._thread_main, daemon=True)
         self._thread.start()
@@ -46,7 +49,7 @@ class GroundTruthWebSocketPublisher:
                 self._clients.discard(websocket)
 
         async with websockets.serve(handler, self.host, self.port):
-            print(f"Ground-truth WS listening on ws://{self.host}:{self.port}")
+            logger.info("Ground-truth WS listening on ws://%s:%s", self.host, self.port)
             while True:
                 queue = self._queue
                 if queue is None:

@@ -1,7 +1,10 @@
+import logging
 import numpy as np
 from Rzyx import Rzyx
-from parameters import Parameters
 from base_component import SimComponentBase
+
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -110,8 +113,14 @@ class WingX8ForceModel(SimComponentBase):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    from model.x8 import X8Parameters
 
-    P = Parameters()
+    P = X8Parameters()
     t = 0.0
     y = np.zeros(12)  # Example state vector
     u = np.zeros(4)  # Example control inputs
@@ -120,4 +129,4 @@ if __name__ == "__main__":
     
     out = forces(t, y, u, wind, P)
 
-    print(out)
+    logger.info("%s", out)
