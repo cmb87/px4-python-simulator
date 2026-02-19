@@ -72,8 +72,8 @@ def main() -> None:
                 "velocity_body_mps": [speed_mps, 0.0, 0.0],
                 "angular_rate_body_rps": [0.0, 0.0, omega],
                 "lla": {
-                    "lat_deg": 37.7749 + north / 111_320.0,
-                    "lon_deg": -122.4194 + east / (111_320.0 * math.cos(math.radians(37.7749))),
+                    "lat_deg": 47.397742 + north / 111_320.0,
+                    "lon_deg": 8.545594 + east / (111_320.0 * math.cos(math.radians(47.397742))),
                     "alt_m": 30.0 - down,
                 },
             }
