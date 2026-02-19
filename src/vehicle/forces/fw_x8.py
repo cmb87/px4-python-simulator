@@ -75,6 +75,15 @@ def forces(t, y, u, wind, P):
         P.C_n_r * P.b / (2 * Va) * r + P.C_n_delta_a * aileron + P.C_n_delta_r * rudder
     )
 
+
+    # Dummy stall model
+    if np.abs(alpha) > np.deg2rad(40.0):
+        logger.info("WARNING STALL")
+        f_drag_s = 0.0
+        f_y = 0.0
+        f_lift_s =0.0
+       # l,m,n = 0.0,0.0,0.0
+
     # Sum aerodynamic forces in body frame
     F_aero = Rzyx(0, alpha, beta).T @ np.array([-f_drag_s, f_y, -f_lift_s])
     T_aero = np.array([l, m, n])
