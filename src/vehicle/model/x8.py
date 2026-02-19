@@ -6,7 +6,7 @@ from forces.fw_x8 import WingX8ForceModel
 class X8Parameters:
     def __init__(self):
         self.r_cg = [0, 0, 0]
-        self.mass = 3.364
+        self.mass = 4.364
 
         self.rho = 1.225
         self.Jx = 1.229
