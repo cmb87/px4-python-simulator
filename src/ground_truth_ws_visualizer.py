@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 import threading
@@ -23,6 +24,9 @@ if vehicle_dir not in sys.path:
     sys.path.insert(0, vehicle_dir)
 
 from quaternion import Quaternion
+
+
+logger = logging.getLogger(__name__)
 
 
 class GroundTruthStore:
@@ -56,7 +60,7 @@ async def _receiver_loop(uri: str, store: GroundTruthStore) -> None:
     while True:
         try:
             async with websockets.connect(uri, ping_interval=20, ping_timeout=20) as ws:
-                print(f"Connected to {uri}")
+                logger.info("Connected to %s", uri)
                 async for message in ws:
                     try:
                         payload = json.loads(message)
@@ -68,7 +72,7 @@ async def _receiver_loop(uri: str, store: GroundTruthStore) -> None:
                     except (KeyError, ValueError, TypeError):
                         continue
         except Exception as err:
-            print(f"WebSocket disconnected ({err}), retrying in 1s")
+            logger.warning("WebSocket disconnected (%s), retrying in 1s", err)
             await asyncio.sleep(1.0)
 
 
@@ -152,6 +156,11 @@ def parse_args():
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     args = parse_args()
     uri = f"ws://{args.host}:{args.port}"
     store = GroundTruthStore(maxlen=4000)

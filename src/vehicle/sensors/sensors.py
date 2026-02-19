@@ -33,7 +33,7 @@ class SensorSuite(SimComponentBase):
         self.baro = BarometerSensor()
         self.baro.set_update_rate(20.0)
         self.baro.set_drift_rate(0.05)
-        self.baro.set_noise(False)
+        self.baro.set_noise(True)
 
     def update(self, t_us, paused):
         if paused:

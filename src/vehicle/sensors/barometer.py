@@ -1,6 +1,10 @@
+import logging
 import math
 import random
 from base_component import SimComponentBase
+
+
+logger = logging.getLogger(__name__)
 
 class BarometerSensor(SimComponentBase):
     def __init__(self):
@@ -122,6 +126,11 @@ class BarometerSensor(SimComponentBase):
 
 if __name__ == "__main__":
     # Example usage
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     baro = BarometerSensor()
     baro.set_update_rate(20.0)  # 20 Hz
     baro.set_drift_rate(0.05)   # 0.05 Pa/s drift
@@ -130,4 +139,4 @@ if __name__ == "__main__":
     for _ in range(10):
         altitude = 20.0  # local z-position in meters
         reading = baro.tick(altitude)
-        print(reading)
+        logger.info("%s", reading)

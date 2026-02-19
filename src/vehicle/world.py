@@ -2,14 +2,25 @@ import numpy as np
 
 from base_component import SimComponentBase
 from dynamics import Dynamics6DOF
-from forces.wing_x8 import WingX8ForceModel
+from model.iris import IrisParameters, build_force_models as build_iris_force_models
+from model.x8 import X8Parameters, build_force_models as build_x8_force_models
 from sensors.sensors import SensorSuite
 
 
 class World(SimComponentBase):
-    def __init__(self, parameters, y0=None, u0=None, wind0=None, z_ground=100.0, force_models=None):
+    def __init__(
+        self,
+        parameters=None,
+        y0=None,
+        u0=None,
+        wind0=None,
+        z_ground=100.0,
+        force_models=None,
+        vehicle_model="x8",
+    ):
         super().__init__()
-        self.P = parameters
+        self.vehicle_model = str(vehicle_model).strip().lower()
+        self.P = self._build_parameters(self.vehicle_model) if parameters is None else parameters
 
         self.y = np.zeros(13) if y0 is None else np.asarray(y0, dtype=float).copy()
         if y0 is None:
@@ -19,10 +30,26 @@ class World(SimComponentBase):
 
         self.dynamics = Dynamics6DOF(z_ground=z_ground)
         if force_models is None:
-            self.force_models = [WingX8ForceModel()]
+            self.force_models = self._build_force_models(self.vehicle_model)
         else:
             self.force_models = list(force_models)
         self.sensor_suite = SensorSuite()
+
+    @staticmethod
+    def _build_parameters(vehicle_model):
+        if vehicle_model == "x8":
+            return X8Parameters()
+        if vehicle_model == "iris":
+            return IrisParameters()
+        raise ValueError(f"Unknown vehicle model '{vehicle_model}'")
+
+    @staticmethod
+    def _build_force_models(vehicle_model):
+        if vehicle_model == "x8":
+            return build_x8_force_models()
+        if vehicle_model == "iris":
+            return build_iris_force_models()
+        raise ValueError(f"Unknown vehicle model '{vehicle_model}'")
 
     def set_state(self, y):
         self.y = np.asarray(y, dtype=float).copy()

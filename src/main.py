@@ -4,6 +4,7 @@
 import os
 import sys
 import time
+import logging
 from typing import Any
 
 import numpy as np
@@ -13,7 +14,6 @@ vehicle_dir = os.path.join(os.path.dirname(__file__), "vehicle")
 if vehicle_dir not in sys.path:
     sys.path.insert(0, vehicle_dir)
 
-from parameters import Parameters
 from world import World
 from visualizer.websockerPublisher import GroundTruthWebSocketPublisher
 
@@ -30,6 +30,10 @@ CHECK_FACTOR = 2
 
 GT_WS_HOST = os.getenv("SIM_GT_WS_HOST", "0.0.0.0")
 GT_WS_PORT = int(os.getenv("SIM_GT_WS_PORT", "8765"))
+VEHICLE_MODEL = os.getenv("SIM_VEHICLE_MODEL", "x8").strip().lower()
+
+LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+logger = logging.getLogger(__name__)
 
 
 
@@ -57,22 +61,32 @@ def controls_to_u(latest_controls: tuple[float, ...] | None, armed: bool) -> np.
     return u
 
 
+def controls_to_u8(latest_controls: tuple[float, ...] | None) -> list[float]:
+    if latest_controls is None:
+        return [0.0] * 8
+    out = [0.0] * 8
+    n = min(len(latest_controls), 8)
+    for i in range(n):
+        out[i] = float(latest_controls[i])
+    return out
+
+
 def simulation_main() -> None:
     conn: Any = mavutil.mavlink_connection("tcpin:0.0.0.0:4560", source_component=51)
 
-    print("Waiting for Heartbeat ...")
+    logger.info("Waiting for Heartbeat ...")
     first_hb = conn.wait_heartbeat()
     px4_sysid = first_hb.get_srcSystem()
     if px4_sysid > 0:
         conn.source_system = px4_sysid
         conn.mav.srcSystem = px4_sysid
-        print(f"Locked simulator SYSID to PX4 SYSID={px4_sysid}")
+        logger.info("Locked simulator SYSID to PX4 SYSID=%s", px4_sysid)
 
     y0 = np.zeros(13)
     y0[0:3] = np.array([0.0, 0.0, -3.0])
     y0[3] = 1.0
 
-    world = World(parameters=Parameters(), y0=y0, u0=np.zeros(4), wind0=np.zeros(6))
+    world = World(vehicle_model=VEHICLE_MODEL, y0=y0, u0=np.zeros(4), wind0=np.zeros(6))
     gt_ws = GroundTruthWebSocketPublisher(host=GT_WS_HOST, port=GT_WS_PORT)
     gt_ws.start()
 
@@ -92,7 +106,7 @@ def simulation_main() -> None:
     last_rx_wall_s = time.time()
     next_rx_warn_wall_s = last_rx_wall_s + 2.0
 
-    print("PX4 connected starting sim")
+    logger.info("PX4 connected starting sim")
     try:
         while True:
             while True:
@@ -104,7 +118,7 @@ def simulation_main() -> None:
                 last_rx_wall_s = time.time()
 
                 if msg_type == "HEARTBEAT":
-                    print("SIM <= HEARTBEAT")
+                    logger.info("SIM <= HEARTBEAT")
 
                 elif msg_type == "HIL_ACTUATOR_CONTROLS":
                     controls = getattr(msg, "controls", None)
@@ -125,19 +139,19 @@ def simulation_main() -> None:
                             hil_state_interval_us = interval_us if interval_us > 0 else -1
                             next_hil_state_time_us = sim_time_us
                             if hil_state_interval_us > 0:
-                                print(f"SIM <= set HIL_STATE_QUAT interval to {hil_state_interval_us} us")
+                                logger.info("SIM <= set HIL_STATE_QUAT interval to %s us", hil_state_interval_us)
                             else:
-                                print("SIM <= disable HIL_STATE_QUAT")
+                                logger.info("SIM <= disable HIL_STATE_QUAT")
 
             if armed and (not was_armed):
-                print("SIM => ARM transition: dynamics enabled")
+                logger.info("SIM => ARM transition: dynamics enabled")
             if (not armed) and was_armed:
-                print("SIM => DISARM transition: dynamics remain enabled")
+                logger.info("SIM => DISARM transition: dynamics remain enabled")
             was_armed = armed
 
             now_wall_s = time.time()
             if now_wall_s >= next_rx_warn_wall_s and (now_wall_s - last_rx_wall_s) > 2.0:
-                print("SIM: no MAVLink RX for >2s")
+                logger.warning("SIM: no MAVLink RX for >2s")
                 next_rx_warn_wall_s = now_wall_s + 2.0
 
             sim_time_us += DT_US
@@ -172,8 +186,8 @@ def simulation_main() -> None:
                     float(baro["dynamic"]) * 0.01,
                     float(baro.get("pressure_altitude_m", gps[2])),
                     15.0,
-                    7167,
-                )
+                    8191,
+                    )
 
                 if hil_state_interval_us > 0 and sim_time_us >= next_hil_state_time_us:
                     vel_north = float(gps[3])
@@ -235,7 +249,9 @@ def simulation_main() -> None:
                 if sim_time_us >= next_websocket_time_us:
                     gt_ws.publish(
                         {
+                            "system_id": int(px4_sysid),
                             "time_usec": int(sim_time_us),
+                            "u": controls_to_u8(latest_controls),
                             "position_ned_m": [float(y[0]), float(y[1]), float(y[2])],
                             "quaternion_wxyz": [float(y[3]), float(y[4]), float(y[5]), float(y[6])],
                             "velocity_body_mps": [float(y[7]), float(y[8]), float(y[9])],
@@ -270,12 +286,17 @@ def simulation_main() -> None:
 
 
 def main() -> None:
-    print("Listening on tcpin:0.0.0.0:4560")
-    print("Press Ctrl+C to stop")
+    logging.basicConfig(
+        level=getattr(logging, os.getenv("SIM_LOG_LEVEL", "INFO").upper(), logging.INFO),
+        format=LOG_FORMAT,
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logger.info("Listening on tcpin:0.0.0.0:4560")
+    logger.info("Press Ctrl+C to stop")
     try:
         simulation_main()
     except KeyboardInterrupt:
-        print("Stopped.")
+        logger.info("Stopped.")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,11 @@
+import logging
 import math
 import random
 from typing import Tuple
 from base_component import SimComponentBase
+
+
+logger = logging.getLogger(__name__)
 
 class GpsSensor(SimComponentBase):
     def __init__(self):
@@ -152,6 +156,11 @@ class GpsSensor(SimComponentBase):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     gps = GpsSensor()
     gps.set_update_rate(10.0)  # 10 Hz
     gps.set_home(47.397742, 8.545594, 488.0)
@@ -162,4 +171,4 @@ if __name__ == "__main__":
         position = (10.0, 5.0, -1.0)  # Local position (meters)
         velocity = (0.5, 0.0, 0.0)    # Velocity (m/s)
         reading = gps.tick(position, velocity)
-        print(reading)
+        logger.info("%s", reading)

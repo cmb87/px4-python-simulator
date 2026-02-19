@@ -1,6 +1,10 @@
+import logging
 import numpy as np
 from quaternion import Quaternion
 from base_component import SimComponentBase
+
+
+logger = logging.getLogger(__name__)
 
 
 class ADIS16448IMU(SimComponentBase):
@@ -140,6 +144,11 @@ class ADIS16448IMU(SimComponentBase):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     imu = ADIS16448IMU()
 
     acc_world = np.array([0.0, 0.0, 0.0])  # e.g., stationary
@@ -147,5 +156,5 @@ if __name__ == "__main__":
     quat = [1.0, 0.0, 0.0, 0.0]  # identity orientation
     imu.set_inputs(acc_body=acc_world, ang_vel_body=ang_vel_body, orientation_quat=quat)
     acc_measured, gyro_measured = imu.update(10_000, paused=False)
-    print("Measured acceleration:", acc_measured)
-    print("Measured angular velocity:", gyro_measured)
+    logger.info("Measured acceleration: %s", acc_measured)
+    logger.info("Measured angular velocity: %s", gyro_measured)
