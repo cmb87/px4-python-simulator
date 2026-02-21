@@ -80,6 +80,16 @@ Use `SIM_VEHICLE_MODEL`:
 
 - `SIM_VEHICLE_MODEL=x8` (default)
 - `SIM_VEHICLE_MODEL=iris`
+- `SIM_VEHICLE_MODEL=ts04`
+
+TS04 optional startup attitude toggle:
+
+- `SIM_TS04_PITCH90_START=1` starts the model at +90 deg pitch attitude.
+- Default is off (`SIM_TS04_PITCH90_START=0`).
+- `SIM_TS04_MOTOR_MAP=a,b,c,d` remaps TS04 sim motor indices `[0,1,2,3]` from incoming
+  `HIL_ACTUATOR_CONTROLS.controls[a,b,c,d]`.
+  Example: `SIM_TS04_MOTOR_MAP=1,3,0,2`.
+- MAVLink (`HIL_STATE_QUATERNION`) and ground-truth websocket always publish raw simulation attitude.
 
 ## Coordinate Frames
 

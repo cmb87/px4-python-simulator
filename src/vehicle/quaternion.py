@@ -21,7 +21,7 @@ class Quaternion(object):
 
         PHI = np.zeros(3)
         PHI[0] = np.arctan2(2 * (c * d + a * b), (a ** 2 - b ** 2 - c ** 2 + d ** 2))
-        PHI[1] = np.arcsin(2 * (a * c - b * d))
+        PHI[1] = np.arcsin(np.clip(2 * (a * c - b * d), -1.0, 1.0))
         PHI[2] = np.arctan2(2 * (b * c + a * d), (a ** 2 + b ** 2 - c ** 2 - d ** 2))
         return PHI
 
