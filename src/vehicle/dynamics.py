@@ -78,7 +78,7 @@ def dynamics(t, y, P, tau, z_ground = 100.0):
     # === Simple ground contact condition
     
     if False:
-        if pos[2] >= z_ground:
+        if pos[2] >= 0:
         # print("Ground contact detected, setting vertical velocity and acceleration to zero.")
             if accel_ned[2] > 0:  # Trying to fall
                 accel_ned[2] = 0.0
@@ -88,7 +88,7 @@ def dynamics(t, y, P, tau, z_ground = 100.0):
                 vel_ned[2] = 0.0
                 vel = Mfg @ vel_ned  # Reproject back to body frame
 
-            pos[2] = z_ground
+            pos[2] = 0.0
             
 
     # ===  Angular Acceleration

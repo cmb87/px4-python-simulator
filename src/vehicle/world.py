@@ -3,6 +3,7 @@ import numpy as np
 from base_component import SimComponentBase
 from dynamics import Dynamics6DOF
 from model.iris import IrisParameters, build_force_models as build_iris_force_models
+from model.ts04 import TS04Parameters, build_force_models as build_ts04_force_models
 from model.x8 import X8Parameters, build_force_models as build_x8_force_models
 from sensors.sensors import SensorSuite
 
@@ -17,14 +18,19 @@ class World(SimComponentBase):
         z_ground=100.0,
         force_models=None,
         vehicle_model="x8",
+        ts04_pitch90_start=False,
     ):
         super().__init__()
         self.vehicle_model = str(vehicle_model).strip().lower()
+        self.ts04_pitch90_start = bool(ts04_pitch90_start)
         self.P = self._build_parameters(self.vehicle_model) if parameters is None else parameters
 
         self.y = np.zeros(13) if y0 is None else np.asarray(y0, dtype=float).copy()
         if y0 is None:
-            self.y[3] = 1.0
+            if self.vehicle_model == "ts04" and self.ts04_pitch90_start:
+                self.y[3:7] = np.array([np.sqrt(0.5), 0.0, np.sqrt(0.5), 0.0])
+            else:
+                self.y[3] = 1.0
         self.u = np.zeros(4) if u0 is None else np.asarray(u0, dtype=float).copy()
         self.wind = np.zeros(6) if wind0 is None else np.asarray(wind0, dtype=float).copy()
 
@@ -41,6 +47,8 @@ class World(SimComponentBase):
             return X8Parameters()
         if vehicle_model == "iris":
             return IrisParameters()
+        if vehicle_model == "ts04":
+            return TS04Parameters()
         raise ValueError(f"Unknown vehicle model '{vehicle_model}'")
 
     @staticmethod
@@ -49,6 +57,8 @@ class World(SimComponentBase):
             return build_x8_force_models()
         if vehicle_model == "iris":
             return build_iris_force_models()
+        if vehicle_model == "ts04":
+            return build_ts04_force_models()
         raise ValueError(f"Unknown vehicle model '{vehicle_model}'")
 
     def set_state(self, y):

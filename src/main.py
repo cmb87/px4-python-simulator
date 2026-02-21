@@ -30,7 +30,9 @@ CHECK_FACTOR = 2
 
 GT_WS_HOST = os.getenv("SIM_GT_WS_HOST", "0.0.0.0")
 GT_WS_PORT = int(os.getenv("SIM_GT_WS_PORT", "8765"))
-VEHICLE_MODEL = os.getenv("SIM_VEHICLE_MODEL", "x8").strip().lower()
+VEHICLE_MODEL = os.getenv("SIM_VEHICLE_MODEL", "ts04").strip().lower()
+TS04_PITCH90_START = os.getenv("SIM_TS04_PITCH90_START", "1").strip().lower() in {"1", "true", "yes", "on"}
+TS04_MOTOR_MAP = os.getenv("SIM_TS04_MOTOR_MAP", "0,1,2,3")
 
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 logger = logging.getLogger(__name__)
@@ -46,7 +48,25 @@ def get_sim_millis(sim_time_us: int) -> int:
     return sim_time_us // 1000
 
 
-def controls_to_u(latest_controls: tuple[float, ...] | None, armed: bool) -> np.ndarray:
+def parse_motor_map(raw: str) -> tuple[int, int, int, int]:
+    tokens = [tok.strip() for tok in raw.split(",") if tok.strip()]
+    if len(tokens) != 4:
+        raise ValueError(f"Expected 4 entries in SIM_TS04_MOTOR_MAP, got '{raw}'")
+    try:
+        values = tuple(int(tok) for tok in tokens)
+    except ValueError as exc:
+        raise ValueError(f"SIM_TS04_MOTOR_MAP must contain integers, got '{raw}'") from exc
+    if sorted(values) != [0, 1, 2, 3]:
+        raise ValueError(f"SIM_TS04_MOTOR_MAP must be a permutation of 0,1,2,3, got '{raw}'")
+    return (values[0], values[1], values[2], values[3])
+
+
+def controls_to_u(
+    latest_controls: tuple[float, ...] | None,
+    armed: bool,
+    ts04_motor_map: tuple[int, int, int, int] = (0, 1, 2, 3),
+    vehicle_model: str = "x8",
+) -> np.ndarray:
     u = np.zeros(4)
     if (not armed) or latest_controls is None:
         return u
@@ -58,6 +78,10 @@ def controls_to_u(latest_controls: tuple[float, ...] | None, armed: bool) -> np.
         u[2] = float(latest_controls[2])
     if len(latest_controls) > 3:
         u[3] = clamp(float(latest_controls[3]), 0.0, 1.0)
+
+    if vehicle_model == "ts04":
+        u = u[list(ts04_motor_map)]
+
     return u
 
 
@@ -75,6 +99,9 @@ def simulation_main() -> None:
     conn: Any = mavutil.mavlink_connection("tcpin:0.0.0.0:4560", source_component=51)
 
     logger.info("Waiting for Heartbeat ...")
+    ts04_motor_map = parse_motor_map(TS04_MOTOR_MAP)
+    if VEHICLE_MODEL == "ts04":
+        logger.info("TS04 motor map (sim motor idx -> HIL control idx): %s", ts04_motor_map)
     first_hb = conn.wait_heartbeat()
     px4_sysid = first_hb.get_srcSystem()
     if px4_sysid > 0:
@@ -84,9 +111,18 @@ def simulation_main() -> None:
 
     y0 = np.zeros(13)
     y0[0:3] = np.array([0.0, 0.0, -3.0])
-    y0[3] = 1.0
+    if VEHICLE_MODEL == "ts04" and TS04_PITCH90_START:
+        y0[3:7] = np.array([np.sqrt(0.5), 0.0, np.sqrt(0.5), 0.0])
+    else:
+        y0[3] = 1.0
 
-    world = World(vehicle_model=VEHICLE_MODEL, y0=y0, u0=np.zeros(4), wind0=np.zeros(6))
+    world = World(
+        vehicle_model=VEHICLE_MODEL,
+        y0=y0,
+        u0=np.zeros(4),
+        wind0=np.zeros(6),
+        ts04_pitch90_start=TS04_PITCH90_START,
+    )
     gt_ws = GroundTruthWebSocketPublisher(host=GT_WS_HOST, port=GT_WS_PORT)
     gt_ws.start()
 
@@ -159,7 +195,14 @@ def simulation_main() -> None:
             now_ms = get_sim_millis(sim_time_us)
             needs_to_pause = (last_time_ran_ms == now_ms) or io_run_only
 
-            world.set_controls(controls_to_u(latest_controls, armed))
+            world.set_controls(
+                controls_to_u(
+                    latest_controls,
+                    armed,
+                    ts04_motor_map=ts04_motor_map,
+                    vehicle_model=VEHICLE_MODEL,
+                )
+            )
             world_out = world.update(sim_time_us, needs_to_pause, freeze_dynamics=(not ever_armed))
 
             if (not needs_to_pause) and world_out is not None:
