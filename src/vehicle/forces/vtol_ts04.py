@@ -107,6 +107,10 @@ def _smoothstep01(x):
 
 
 class TS04BlendedPassiveAeroForceModel(SimComponentBase):
+    def __init__(self):
+        super().__init__()
+        self._debug_counter = 0
+
     def update(self, t_us, paused):
         if paused:
             return self.last_output
@@ -147,7 +151,7 @@ class TS04BlendedPassiveAeroForceModel(SimComponentBase):
         )
 
         m_a = float(P.C_m_0) + float(P.C_m_alpha) * alpha
-        m = 0.5 * float(P.rho) * Va**2 * float(P.S_wing) * float(P.c) * (
+        m = 0.1 * 0.5 * float(P.rho) * Va**2 * float(P.S_wing) * float(P.c) * (
             m_a + float(P.C_m_q) * float(P.c) / (2.0 * Va) * q
         )
 
@@ -158,14 +162,14 @@ class TS04BlendedPassiveAeroForceModel(SimComponentBase):
             + float(P.C_Y_r) * float(P.b) / (2.0 * Va) * r
         )
 
-        l = 0.5 * float(P.rho) * Va**2 * float(P.b) * float(P.S_wing) * (
+        l = 0.1 * 0.5 * float(P.rho) * Va**2 * float(P.b) * float(P.S_wing) * (
             float(P.C_l_0)
             + float(P.C_l_beta) * beta
             + float(P.C_l_p) * float(P.b) / (2.0 * Va) * p
             + float(P.C_l_r) * float(P.b) / (2.0 * Va) * r
         )
 
-        n = 0.5 * float(P.rho) * Va**2 * float(P.b) * float(P.S_wing) * (
+        n = 0.1 *0.5 * float(P.rho) * Va**2 * float(P.b) * float(P.S_wing) * (
             float(P.C_n_0)
             + float(P.C_n_beta) * beta
             + float(P.C_n_p) * float(P.b) / (2.0 * Va) * p
@@ -175,10 +179,23 @@ class TS04BlendedPassiveAeroForceModel(SimComponentBase):
         wing_force = Rzyx(0.0, alpha, beta).T @ np.array([-f_drag_s, f_y, -f_lift_s], dtype=float)
         wing_torque = np.array([l, m, n], dtype=float)
 
-        stall_alpha_deg = float(P.passive_wing_stall_alpha_deg)
-        if np.abs(np.rad2deg(alpha)) > stall_alpha_deg:
-            wing_force = np.zeros(3)
-            wing_torque = np.zeros(3)
+        abs_alpha_deg = float(np.abs(np.rad2deg(alpha)))
+        stall_end_deg = float(P.passive_wing_stall_alpha_deg)
+        stall_start_deg = float(getattr(P, "passive_wing_stall_start_alpha_deg", stall_end_deg - 5.0))
+        if stall_end_deg < stall_start_deg:
+            stall_start_deg, stall_end_deg = stall_end_deg, stall_start_deg
+        stall_span = max(stall_end_deg - stall_start_deg, 1e-6)
+
+        if abs_alpha_deg <= stall_start_deg:
+            stall_weight = 1.0
+        elif abs_alpha_deg >= stall_end_deg:
+            stall_weight = 0.0
+        else:
+            stall_blend = (abs_alpha_deg - stall_start_deg) / stall_span
+            stall_weight = 1.0 - _smoothstep01(stall_blend)
+
+        wing_force = wing_force * stall_weight
+        wing_torque = wing_torque * stall_weight
 
         wing_force = wing_force * float(P.passive_wing_force_scale)
         wing_torque = wing_torque * float(P.passive_wing_moment_scale)
@@ -203,6 +220,32 @@ class TS04BlendedPassiveAeroForceModel(SimComponentBase):
 
         total_force = (1.0 - wing_weight) * sphere_force + wing_weight * wing_force
         total_torque = wing_weight * wing_torque
+
+        if bool(getattr(P, "debug_ts04_aero", False)):
+            self._debug_counter += 1
+            stride = int(max(1, getattr(P, "debug_ts04_aero_stride", 1)))
+            if (self._debug_counter % stride) == 0:
+                print(
+                    "ts04_aero:",
+                    "Va:",
+                    np.around(Va, 2),
+                    "alpha_deg:",
+                    np.around(np.rad2deg(alpha), 2),
+                    "beta_deg:",
+                    np.around(np.rad2deg(beta), 2),
+                    "wing_w:",
+                    np.around(wing_weight, 3),
+                    "stall_w:",
+                    np.around(stall_weight, 3),
+                    "sphere_F:",
+                    np.around(sphere_force, 2),
+                    "wing_F:",
+                    np.around(wing_force, 2),
+                    "wing_M:",
+                    np.around(wing_torque, 2),
+                    "out_M:",
+                    np.around(total_torque, 2),
+                )
 
         self.last_output = np.concatenate([total_force, total_torque])
         self._last_t_us = int(t_us)

@@ -1,6 +1,7 @@
 import numpy as np
 
 from forces.vtol_ts04 import TS04ForceModel, TS04BlendedPassiveAeroForceModel
+from forces.generic.passive_sphere_aero import PassiveSphereAeroForceModel
 
 
 class TS04Parameters:
@@ -49,13 +50,18 @@ class TS04Parameters:
             dtype=float,
         )
 
+        self.gamma_motor_deg = 5.0 # Titled motor for more roll (FW), yaw (MC) control
+
+        cm = np.cos(np.deg2rad(self.gamma_motor_deg))
+        sm = np.sin(np.deg2rad(self.gamma_motor_deg))
+
         # Motor thrust axes in body frame (FRD), one vector per motor.
         self.motor_thrust_directions_body = np.array(
             [
-                [1.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
+                [cm, 0.0, sm],
+                [cm, 0.0, -sm],
+                [cm, 0.0, sm],
+                [cm, 0.0, -sm],
             ],
             dtype=float,
         )
@@ -66,8 +72,8 @@ class TS04Parameters:
         self.sphere_cd = 0.47
         self.sphere_area = 0.04
 
-        self.S_wing = 0.35
-        self.b = 1.20
+        self.S_wing = 0.1
+        self.b = 0.40
         self.c = self.S_wing / self.b
 
         self.C_L_alpha = 4.0203282440006793
@@ -104,7 +110,10 @@ class TS04Parameters:
         self.passive_wing_moment_scale = 0.35
         self.blend_tilt_sphere_deg = 65.0
         self.blend_tilt_wing_deg = 25.0
+        self.passive_wing_stall_start_alpha_deg = 25.0
         self.passive_wing_stall_alpha_deg = 30.0
+        self.debug_ts04_aero = True
+        self.debug_ts04_aero_stride = 1
 
         self.magnetic_ned = np.array([0.21523, 0.01, 0.43])
 
@@ -128,4 +137,5 @@ class TS04Parameters:
 
 
 def build_force_models():
-    return [TS04ForceModel(), TS04BlendedPassiveAeroForceModel()]
+   # return [TS04ForceModel(), PassiveSphereAeroForceModel()] # TS04BlendedPassiveAeroForceModel()
+    return [TS04ForceModel(), TS04BlendedPassiveAeroForceModel()] # TS04BlendedPassiveAeroForceModel()
