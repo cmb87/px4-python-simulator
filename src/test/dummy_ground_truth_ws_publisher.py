@@ -76,6 +76,10 @@ def main() -> None:
                     "lon_deg": 8.545594 + east / (111_320.0 * math.cos(math.radians(47.397742))),
                     "alt_m": 30.0 - down,
                 },
+                "aero": {
+                    "alpha_deg": 0.0,
+                    "beta_deg": 0.0,
+                },
             }
             ws.publish(payload)
             time.sleep(period_s)

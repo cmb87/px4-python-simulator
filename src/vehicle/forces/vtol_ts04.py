@@ -92,7 +92,7 @@ class TS04ForceModel(SimComponentBase):
 
         gyroscopic_moment = -np.cross(body_rates, rotor_angular_momentum)
 
-        print("u:", np.around(u,2), "forces:", np.around(total_force,2), "torque:", np.around(total_torque,2), "gyro_mom:", np.around(gyroscopic_moment,2))
+       # print("u:", np.around(u,2), "forces:", np.around(total_force,2), "torque:", np.around(total_torque,2), "gyro_mom:", np.around(gyroscopic_moment,2))
 
         total_torque += gyroscopic_moment
 
@@ -146,7 +146,8 @@ class TS04BlendedPassiveAeroForceModel(SimComponentBase):
 
         C_D_alpha = float(P.C_D_0) + float(P.C_D_alpha1) * alpha + float(P.C_D_alpha2) * alpha**2
         C_D_beta = float(P.C_D_beta1) * beta + float(P.C_D_beta2) * beta**2
-        f_drag_s = 0.5 * float(P.rho) * Va**2 * float(P.S_wing) * (
+        
+        f_drag_s = 2.0 *  0.5 * float(P.rho) * Va**2 * float(P.S_wing) * (
             C_D_alpha + C_D_beta + float(P.C_D_q) * float(P.c) / (2.0 * Va) * q
         )
 
