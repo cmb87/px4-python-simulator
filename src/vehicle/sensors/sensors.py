@@ -49,6 +49,11 @@ class SensorSuite(SimComponentBase):
         if not self._sensor_params_initialized:
             self.imu.set_biases(accel_bias_mps2=P.accel_bias, gyro_bias_rps=P.gyro_bias)
             self.mag.set_hard_iron(P.mag_bias)
+            gps_origin = getattr(P, "gps_origin", {})
+            lat_deg = float(gps_origin.get("lat", 47.397742))
+            lon_deg = float(gps_origin.get("lon", 8.545594))
+            alt_m = float(gps_origin.get("alt", 470.0))
+            self.gps.set_home(lat_deg, lon_deg, alt_m)
             self._sensor_params_initialized = True
 
         pos = y[0:3]

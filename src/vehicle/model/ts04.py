@@ -115,6 +115,8 @@ class TS04Parameters:
         self.debug_ts04_aero = True
         self.debug_ts04_aero_stride = 1
 
+        self.ts04_passive_aero_model = "blended"
+
         self.magnetic_ned = np.array([0.21523, 0.01, 0.43])
 
         self.accel_bias = 0 * np.array([0.01, -0.01, 0.02])
@@ -136,6 +138,12 @@ class TS04Parameters:
         }
 
 
-def build_force_models():
-   # return [TS04ForceModel(), PassiveSphereAeroForceModel()] # TS04BlendedPassiveAeroForceModel()
-    return [TS04ForceModel(), TS04BlendedPassiveAeroForceModel()] # TS04BlendedPassiveAeroForceModel()
+def build_force_models(parameters=None):
+    P = TS04Parameters() if parameters is None else parameters
+    passive_model = str(getattr(P, "ts04_passive_aero_model", "blended")).strip().lower()
+    if passive_model == "sphere":
+        aero_model = PassiveSphereAeroForceModel()
+    else:
+        aero_model = TS04BlendedPassiveAeroForceModel()
+
+    return [TS04ForceModel(), aero_model]

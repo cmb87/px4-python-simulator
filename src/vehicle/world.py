@@ -36,7 +36,7 @@ class World(SimComponentBase):
 
         self.dynamics = Dynamics6DOF(z_ground=z_ground)
         if force_models is None:
-            self.force_models = self._build_force_models(self.vehicle_model)
+            self.force_models = self._build_force_models(self.vehicle_model, self.P)
         else:
             self.force_models = list(force_models)
         self.sensor_suite = SensorSuite()
@@ -52,13 +52,13 @@ class World(SimComponentBase):
         raise ValueError(f"Unknown vehicle model '{vehicle_model}'")
 
     @staticmethod
-    def _build_force_models(vehicle_model):
+    def _build_force_models(vehicle_model, parameters=None):
         if vehicle_model == "x8":
             return build_x8_force_models()
         if vehicle_model == "iris":
             return build_iris_force_models()
         if vehicle_model == "ts04":
-            return build_ts04_force_models()
+            return build_ts04_force_models(parameters=parameters)
         raise ValueError(f"Unknown vehicle model '{vehicle_model}'")
 
     def set_state(self, y):

@@ -61,6 +61,14 @@ def parse_motor_map(raw: str) -> tuple[int, int, int, int]:
     return (values[0], values[1], values[2], values[3])
 
 
+def parse_env_float(name: str, default: float) -> float:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a float, got '{raw}'") from exc
+
+
 def controls_to_u(
     latest_controls: tuple[float, ...] | None,
     armed: bool,
@@ -95,10 +103,34 @@ def controls_to_u8(latest_controls: tuple[float, ...] | None) -> list[float]:
     return out
 
 
+def compute_aero_angles_deg(y: np.ndarray, wind: np.ndarray) -> tuple[float | None, float | None]:
+    vel_rel = np.asarray(y[7:10], dtype=float) - np.asarray(wind[:3], dtype=float)
+    u_r, v_r, w_r = vel_rel
+    Va = float(np.linalg.norm(vel_rel))
+    if Va <= 1e-5:
+        return None, None
+
+    alpha_deg = float(np.rad2deg(np.arctan2(w_r, u_r)))
+    beta_deg = float(np.rad2deg(np.arcsin(np.clip(v_r / Va, -1.0, 1.0))))
+    return alpha_deg, beta_deg
+
+
 def simulation_main() -> None:
     conn: Any = mavutil.mavlink_connection("tcpin:0.0.0.0:4560", source_component=51)
 
     logger.info("Waiting for Heartbeat ...")
+    logger.info("Using vehicle model: %s", VEHICLE_MODEL)
+    gps_origin = {
+        "lat": parse_env_float("SIM_GPS_ORIGIN_LAT", 47.397742),
+        "lon": parse_env_float("SIM_GPS_ORIGIN_LON", 8.545594),
+        "alt": parse_env_float("SIM_GPS_ORIGIN_ALT", 470.0),
+    }
+    logger.info(
+        "Using GPS origin: lat=%.6f lon=%.6f alt=%.2f",
+        gps_origin["lat"],
+        gps_origin["lon"],
+        gps_origin["alt"],
+    )
     ts04_motor_map = parse_motor_map(TS04_MOTOR_MAP)
     if VEHICLE_MODEL == "ts04":
         logger.info("TS04 motor map (sim motor idx -> HIL control idx): %s", ts04_motor_map)
@@ -123,6 +155,7 @@ def simulation_main() -> None:
         wind0=np.zeros(6),
         ts04_pitch90_start=TS04_PITCH90_START,
     )
+    world.P.gps_origin = dict(gps_origin)
     gt_ws = GroundTruthWebSocketPublisher(host=GT_WS_HOST, port=GT_WS_PORT)
     gt_ws.start()
 
@@ -290,6 +323,7 @@ def simulation_main() -> None:
                     )
 
                 if sim_time_us >= next_websocket_time_us:
+                    alpha_deg, beta_deg = compute_aero_angles_deg(y, world.wind)
                     gt_ws.publish(
                         {
                             "system_id": int(px4_sysid),
@@ -303,6 +337,10 @@ def simulation_main() -> None:
                                 "lat_deg": float(gps[0]),
                                 "lon_deg": float(gps[1]),
                                 "alt_m": float(gps[2]),
+                            },
+                            "aero": {
+                                "alpha_deg": alpha_deg,
+                                "beta_deg": beta_deg,
                             },
                         }
                     )

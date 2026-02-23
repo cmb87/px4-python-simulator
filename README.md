@@ -81,6 +81,8 @@ Use `SIM_VEHICLE_MODEL`:
 - `SIM_VEHICLE_MODEL=x8` (default)
 - `SIM_VEHICLE_MODEL=iris`
 - `SIM_VEHICLE_MODEL=ts04`
+- `SIM_GPS_ORIGIN_LAT` / `SIM_GPS_ORIGIN_LON` / `SIM_GPS_ORIGIN_ALT` set GPS origin for all models.
+  Defaults: `47.397742`, `8.545594`, `470.0`.
 
 TS04 optional startup attitude toggle:
 
@@ -90,6 +92,7 @@ TS04 optional startup attitude toggle:
   `HIL_ACTUATOR_CONTROLS.controls[a,b,c,d]`.
   Example: `SIM_TS04_MOTOR_MAP=1,3,0,2`.
 - MAVLink (`HIL_STATE_QUATERNION`) and ground-truth websocket always publish raw simulation attitude.
+- Ground-truth websocket payload includes `aero.alpha_deg` and `aero.beta_deg` (set to `null` when airspeed is too low).
 
 ## Coordinate Frames
 
