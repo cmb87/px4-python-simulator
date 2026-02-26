@@ -222,31 +222,31 @@ class TS04BlendedPassiveAeroForceModel(SimComponentBase):
         total_force = (1.0 - wing_weight) * sphere_force + wing_weight * wing_force
         total_torque = wing_weight * wing_torque
 
-        if bool(getattr(P, "debug_ts04_aero", False)):
-            self._debug_counter += 1
-            stride = int(max(1, getattr(P, "debug_ts04_aero_stride", 1)))
-            if (self._debug_counter % stride) == 0:
-                print(
-                    "ts04_aero:",
-                    "Va:",
-                    np.around(Va, 2),
-                    "alpha_deg:",
-                    np.around(np.rad2deg(alpha), 2),
-                    "beta_deg:",
-                    np.around(np.rad2deg(beta), 2),
-                    "wing_w:",
-                    np.around(wing_weight, 3),
-                    "stall_w:",
-                    np.around(stall_weight, 3),
-                    "sphere_F:",
-                    np.around(sphere_force, 2),
-                    "wing_F:",
-                    np.around(wing_force, 2),
-                    "wing_M:",
-                    np.around(wing_torque, 2),
-                    "out_M:",
-                    np.around(total_torque, 2),
-                )
+        # if bool(getattr(P, "debug_ts04_aero", False)):
+        #     self._debug_counter += 1
+        #     stride = int(max(1, getattr(P, "debug_ts04_aero_stride", 1)))
+        #     if (self._debug_counter % stride) == 0:
+        #         print(
+        #             "ts04_aero:",
+        #             "Va:",
+        #             np.around(Va, 2),
+        #             "alpha_deg:",
+        #             np.around(np.rad2deg(alpha), 2),
+        #             "beta_deg:",
+        #             np.around(np.rad2deg(beta), 2),
+        #             "wing_w:",
+        #             np.around(wing_weight, 3),
+        #             "stall_w:",
+        #             np.around(stall_weight, 3),
+        #             "sphere_F:",
+        #             np.around(sphere_force, 2),
+        #             "wing_F:",
+        #             np.around(wing_force, 2),
+        #             "wing_M:",
+        #             np.around(wing_torque, 2),
+        #             "out_M:",
+        #             np.around(total_torque, 2),
+        #         )
 
         self.last_output = np.concatenate([total_force, total_torque])
         self._last_t_us = int(t_us)

@@ -114,3 +114,25 @@ class World(SimComponentBase):
             "sensors": z,
         }
         return self.last_output
+
+    def observe_external_state(self, t_us, y, ydot, tau=None):
+        self.y = np.asarray(y, dtype=float).copy()
+        ydot = np.asarray(ydot, dtype=float).copy()
+        tau_vec = np.zeros(6) if tau is None else np.asarray(tau, dtype=float).copy()
+
+        self.sensor_suite.set_inputs(y=self.y, ydot=ydot, u=self.u, wind=self.wind, P=self.P, tau=tau_vec)
+        z = self.sensor_suite.update(t_us, paused=False)
+
+        self.last_output = {
+            "t_us": int(t_us),
+            "y": self.y.copy(),
+            "ydot": ydot.copy(),
+            "tau": tau_vec.copy(),
+            "sensors": z,
+        }
+        return self.last_output
+
+    def sync_time(self, t_us):
+        t_val = int(t_us)
+        self._last_t_us = t_val
+        self.dynamics._last_t_us = t_val
