@@ -13,10 +13,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class GroundTruthWebSocketPublisher:
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, enabled: bool = True):
         self.host = host
         self.port = int(port)
-        self.enabled = websockets is not None
+        self.enabled = bool(enabled) and (websockets is not None)
         self._clients: set[Any] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queue: asyncio.Queue[str | None] | None = None
@@ -24,7 +24,8 @@ class GroundTruthWebSocketPublisher:
 
     def start(self) -> None:
         if not self.enabled:
-            logger.warning("Ground-truth WS disabled: install 'websockets' package to enable it")
+            if websockets is None:
+                logger.warning("Ground-truth WS disabled: install 'websockets' package to enable it")
             return
         self._thread = threading.Thread(target=self._thread_main, daemon=True)
         self._thread.start()
@@ -35,8 +36,23 @@ class GroundTruthWebSocketPublisher:
         self._queue = asyncio.Queue(maxsize=1)
         try:
             self._loop.run_until_complete(self._run_server())
+        except OSError as exc:
+            logger.error(
+                "Ground-truth WS failed on ws://%s:%s: %s",
+                self.host,
+                self.port,
+                exc,
+            )
+            self.enabled = False
+        except Exception:
+            logger.exception("Ground-truth WS thread crashed")
+            self.enabled = False
         finally:
-            self._loop.close()
+            if self._loop is not None and not self._loop.is_closed():
+                self._loop.close()
+            self._loop = None
+            self._queue = None
+            self._clients.clear()
 
     async def _run_server(self) -> None:
         assert websockets is not None
@@ -67,35 +83,43 @@ class GroundTruthWebSocketPublisher:
                         self._clients.discard(client)
 
     def publish(self, payload: dict[str, Any]) -> None:
-        if not self.enabled or self._loop is None or self._queue is None:
+        loop = self._loop
+        queue = self._queue
+        if (not self.enabled) or loop is None or queue is None or loop.is_closed():
             return
 
         msg = json.dumps(payload, separators=(",", ":"))
 
         def _enqueue() -> None:
-            assert self._queue is not None
-            if self._queue.full():
+            if queue.full():
                 try:
-                    self._queue.get_nowait()
+                    queue.get_nowait()
                 except asyncio.QueueEmpty:
                     pass
-            self._queue.put_nowait(msg)
+            queue.put_nowait(msg)
 
-        self._loop.call_soon_threadsafe(_enqueue)
+        try:
+            loop.call_soon_threadsafe(_enqueue)
+        except RuntimeError:
+            return
 
     def stop(self) -> None:
-        if not self.enabled or self._loop is None or self._queue is None:
+        loop = self._loop
+        queue = self._queue
+        if (not self.enabled) or loop is None or queue is None or loop.is_closed():
             return
 
         def _stop_enqueue() -> None:
-            assert self._queue is not None
-            if self._queue.full():
+            if queue.full():
                 try:
-                    self._queue.get_nowait()
+                    queue.get_nowait()
                 except asyncio.QueueEmpty:
                     pass
-            self._queue.put_nowait(None)
+            queue.put_nowait(None)
 
-        self._loop.call_soon_threadsafe(_stop_enqueue)
-        if self._thread is not None:
+        try:
+            loop.call_soon_threadsafe(_stop_enqueue)
+        except RuntimeError:
+            return
+        if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=1.0)
