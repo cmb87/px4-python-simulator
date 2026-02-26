@@ -169,10 +169,14 @@ Use different MAVLink bind ports for master/slave when running both simultaneous
 - `SIM_TRANSFER_UDP_BIND_PORT` (default `18000`)
 - `SIM_TRANSFER_TIMEOUT_S` (default `1.0`)
 - `SIM_TRANSFER_ARM_M=dx,dy,dz` arm offset vector [m]
-- `SIM_TRANSFER_ARM_FRAME=world_ned|master_body` (default `master_body`)
-  - `world_ned`: arm is fixed in NED (recommended for two separate vehicles)
+- `SIM_TRANSFER_ARM_FRAME=master_body` (only supported option)
   - `master_body`: arm is fixed in master body frame (rigid-body lever-arm model)
 - `SIM_TRANSFER_REL_EULER_DEG=roll,pitch,yaw` fixed slave-from-master body rotation [deg]
+
+Connection notifications:
+
+- Slave logs when transfer connection to master is established.
+- Master logs when it receives a transfer connection hello from a slave endpoint.
 
 ### Slave cutover modes
 
@@ -189,7 +193,7 @@ Master:
 
 Slave:
 
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_ARM_FRAME=world_ned SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_GT_WS_ENABLED=true SIM_GT_WS_PORT=8766 python src/main.py`
+- `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_ARM_FRAME=master_body SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_GT_WS_ENABLED=true SIM_GT_WS_PORT=8766 python src/main.py`
 
 ## Transfer Alignment Flow and Lever Compensation
 
@@ -197,11 +201,8 @@ Slave:
 flowchart TD
   MState[Master state from local dynamics\ny_m, ydot_m] --> UDP[UDP transfer packet\nseq, time_us, y, ydot]
   UDP --> SRecv[Slave receives latest packet]
-  SRecv --> Arm{SIM_TRANSFER_ARM_FRAME}
-  Arm -->|world_ned| Rw[r = arm_m]
-  Arm -->|master_body| Rb[r = R_mw * arm_m]
-  Rw --> Kine
-  Rb --> Kine
+  SRecv --> Arm[Arm frame fixed to master body\nr = R_mw * arm_m]
+  Arm --> Kine
   Kine[Lever compensation\nv_s,w = v_m,w + omega_w x r\na_s,w = a_m,w + alpha_w x r + omega_w x (omega_w x r)] --> Rot
   Rot[Apply relative attitude\nq_s = q_sm ⊗ q_m\nomega_s,b = R_sm * omega_m,b\nv_s,b = R_sw * v_s,w] --> Out
   Out[Publish transformed slave sensors\nto slave PX4 instance]
@@ -213,13 +214,13 @@ Symbols below match `src/transfer_alignment.py` (`transform_master_to_slave_stat
 - `q_sm`: fixed slave-from-master body rotation from `SIM_TRANSFER_REL_EULER_DEG`
 - `q_s = q_sm ⊗ q_m`: slave attitude quaternion
 - `arm_m`: `SIM_TRANSFER_ARM_M` lever arm
-- `r`: lever arm in world frame (`r = arm_m` for `world_ned`, `r = R_mw arm_m` for `master_body`)
+- `r`: lever arm in world frame (`r = R_mw arm_m`)
 
 Equations used for rigid-body lever-arm compensation:
 
 - Position: `p_s = p_m + r`
 - Angular rate (slave body): `omega_s,b = R_sm omega_m,b`
-- World velocity: `v_s,w = v_m,w + omega_w x r` (only for `master_body`; otherwise `v_s,w = v_m,w`)
-- World acceleration: `a_s,w = a_m,w + alpha_w x r + omega_w x (omega_w x r)` (only for `master_body`; otherwise `a_s,w = a_m,w`)
+- World velocity: `v_s,w = v_m,w + omega_w x r`
+- World acceleration: `a_s,w = a_m,w + alpha_w x r + omega_w x (omega_w x r)`
 - Slave body velocity derivative: `dv_s,b = R_sw a_s,w - omega_s,b x v_s,b`
 - Quaternion derivative: `qdot_s = 0.5 * Omega(omega_s,b) * q_s`
