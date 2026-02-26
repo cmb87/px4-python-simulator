@@ -127,8 +127,8 @@ def parse_vehicle_model(raw: str) -> str:
 
 def parse_arm_frame(raw: str) -> str:
     value = str(raw).strip().lower()
-    if value not in {"world_ned", "master_body"}:
-        raise ValueError(f"SIM_TRANSFER_ARM_FRAME must be one of world_ned|master_body, got '{raw}'")
+    if value != "master_body":
+        raise ValueError(f"SIM_TRANSFER_ARM_FRAME only supports master_body, got '{raw}'")
     return value
 
 
@@ -376,6 +376,14 @@ def simulation_main() -> None:
 
             if slave_coupled:
                 packet = transfer_slave_link.poll_latest() if transfer_slave_link is not None else None
+                if transfer_slave_link is not None:
+                    master_endpoint = transfer_slave_link.consume_master_connected_endpoint()
+                    if master_endpoint is not None:
+                        logger.info(
+                            "SIM: transfer connection established to master udp://%s:%s",
+                            master_endpoint[0],
+                            master_endpoint[1],
+                        )
 
                 if packet is None or packet.seq == last_transfer_seq:
                     if transfer_slave_link is not None and transfer_slave_link.timed_out() and now_wall_s >= next_transfer_warn_wall_s:
@@ -417,6 +425,9 @@ def simulation_main() -> None:
 
                 if role == "master" and (not needs_to_pause) and world_out is not None and transfer_master_link is not None:
                     transfer_master_link.send(sim_time_us, world_out["y"], world_out["ydot"])
+                    connected_slaves = transfer_master_link.poll_new_slave_connections()
+                    for endpoint in connected_slaves:
+                        logger.info("SIM: transfer slave connected from udp://%s:%s", endpoint[0], endpoint[1])
 
             should_publish = world_out is not None and ((not needs_to_pause) or slave_coupled)
 

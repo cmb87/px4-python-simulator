@@ -12,6 +12,7 @@ _PACKET_HEADER = struct.Struct("!IQ")
 _PACKET_FLOAT_COUNT = 26
 _PACKET_FLOATS = struct.Struct("!" + ("d" * _PACKET_FLOAT_COUNT))
 _PACKET_SIZE = _PACKET_HEADER.size + _PACKET_FLOATS.size
+_SLAVE_HELLO = b"SLAVE_HELLO_V1"
 
 
 def _normalize_quat_wxyz(q: np.ndarray) -> np.ndarray:
@@ -66,7 +67,9 @@ class TransferAlignmentMasterLink:
     def __init__(self, target_host: str, target_port: int):
         self._target = (str(target_host), int(target_port))
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.setblocking(False)
         self._seq = 0
+        self._connected_slaves: set[tuple[str, int]] = set()
 
     def close(self) -> None:
         self._sock.close()
@@ -79,6 +82,25 @@ class TransferAlignmentMasterLink:
         self._sock.sendto(payload, self._target)
         self._seq = (self._seq + 1) & 0xFFFFFFFF
 
+    def poll_new_slave_connections(self) -> list[tuple[str, int]]:
+        newly_connected: list[tuple[str, int]] = []
+        while True:
+            try:
+                data, addr = self._sock.recvfrom(256)
+            except BlockingIOError:
+                break
+
+            if data != _SLAVE_HELLO:
+                continue
+
+            endpoint = (str(addr[0]), int(addr[1]))
+            if endpoint in self._connected_slaves:
+                continue
+            self._connected_slaves.add(endpoint)
+            newly_connected.append(endpoint)
+
+        return newly_connected
+
 
 class TransferAlignmentSlaveLink:
     def __init__(self, bind_host: str, bind_port: int, timeout_s: float = 1.0):
@@ -89,6 +111,13 @@ class TransferAlignmentSlaveLink:
         self._last_rx_wall_s = time.time()
         self._last_seq = -1
         self._latest_packet: TransferPacket | None = None
+        self._master_addr: tuple[str, int] | None = None
+        self._pending_master_addr: tuple[str, int] | None = None
+
+    def consume_master_connected_endpoint(self) -> tuple[str, int] | None:
+        endpoint = self._pending_master_addr
+        self._pending_master_addr = None
+        return endpoint
 
     def close(self) -> None:
         self._sock.close()
@@ -120,6 +149,11 @@ class TransferAlignmentSlaveLink:
             self._latest_packet = pkt
             self._last_seq = int(seq)
             self._last_rx_wall_s = time.time()
+            endpoint = (str(_addr[0]), int(_addr[1]))
+            if endpoint != self._master_addr:
+                self._master_addr = endpoint
+                self._pending_master_addr = endpoint
+                self._sock.sendto(_SLAVE_HELLO, endpoint)
 
         return latest
 
@@ -129,15 +163,15 @@ def transform_master_to_slave_state(
     ydot_master: np.ndarray,
     arm_m: np.ndarray,
     q_slave_from_master_wxyz: np.ndarray,
-    arm_frame: str = "world_ned",
+    arm_frame: str = "master_body",
 ) -> tuple[np.ndarray, np.ndarray]:
     y_master = np.asarray(y_master, dtype=float).reshape(13)
     ydot_master = np.asarray(ydot_master, dtype=float).reshape(13)
     arm_m = np.asarray(arm_m, dtype=float).reshape(3)
     q_sm = _normalize_quat_wxyz(q_slave_from_master_wxyz)
     arm_frame_value = str(arm_frame).strip().lower()
-    if arm_frame_value not in {"world_ned", "master_body"}:
-        raise ValueError(f"Unsupported arm frame '{arm_frame}'")
+    if arm_frame_value != "master_body":
+        raise ValueError(f"Unsupported arm frame '{arm_frame}', only 'master_body' is supported")
 
     y_slave = np.zeros(13, dtype=float)
     ydot_slave = np.zeros(13, dtype=float)
@@ -152,21 +186,14 @@ def transform_master_to_slave_state(
     r_mw = r_wm.T
 
     r_sm = Quaternion.Mfg(q_sm)
-
-    if arm_frame_value == "master_body":
-        r_world = r_mw @ arm_m
-    else:
-        r_world = arm_m
+    r_world = r_mw @ arm_m
 
     p_m_ned = y_master[0:3]
     p_s_ned = p_m_ned + r_world
 
     omega_w = r_mw @ omega_m_b
     v_m_world = r_mw @ v_m_b
-    if arm_frame_value == "master_body":
-        v_s_world = v_m_world + np.cross(omega_w, r_world)
-    else:
-        v_s_world = v_m_world
+    v_s_world = v_m_world + np.cross(omega_w, r_world)
 
     q_s = _normalize_quat_wxyz(quat_mul_wxyz(q_sm, q_m))
     r_sw = Quaternion.Mfg(q_s)
@@ -176,10 +203,7 @@ def transform_master_to_slave_state(
 
     a_m_world = r_mw @ (dv_m_b + np.cross(omega_m_b, v_m_b))
     alpha_world = r_mw @ domega_m_b
-    if arm_frame_value == "master_body":
-        a_s_world = a_m_world + np.cross(alpha_world, r_world) + np.cross(omega_w, np.cross(omega_w, r_world))
-    else:
-        a_s_world = a_m_world
+    a_s_world = a_m_world + np.cross(alpha_world, r_world) + np.cross(omega_w, np.cross(omega_w, r_world))
     dv_s_b = r_sw @ a_s_world - np.cross(omega_s_b, v_s_b)
 
     alpha_s_b = r_sm @ domega_m_b
