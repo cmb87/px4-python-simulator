@@ -17,6 +17,8 @@
 
 \begin{document}
 \maketitle
+\tableofcontents
+\clearpage
 
 \section{Scope}
 This document describes the simulation kernel and interfaces implemented in the repository:
@@ -128,10 +130,9 @@ a_b &= \frac{f_b + R_{wb}(q)[0,0,mg]^T}{m} - \omega_b \times v_b, \\
 \dot{\omega}_b &= I^{-1}\left(m_b - \omega_b \times I\omega_b\right).
 \end{align}
 
-Attitude dynamics and integration:
+Attitude dynamics:
 \begin{align}
-\dot{q} &= \frac{1}{2}\Omega(\omega_b)q, \\
-y_{k+1} &= y_k + \dot{y}_k\,\Delta t,
+\dot{q} &= \frac{1}{2}\Omega(\omega_b)q,
 \end{align}
 where, for $\omega_b=[p,q,r]^T$ and $q=[q_w,q_x,q_y,q_z]^T$,
 \begin{equation}
@@ -143,12 +144,27 @@ q & -r & 0 & p \\
 r & q & -p & 0
 \end{bmatrix}.
 \end{equation}
-with quaternion normalization after each integration step.
+
+Numerical integration (applied to all state components):
+\begin{equation}
+y_{k+1} = y_k + \dot{y}_k\,\Delta t.
+\end{equation}
+Quaternion normalization is applied after each integration step.
+
+Ground-contact condition at $z_{ned}=0$:
+\begin{align}
+\text{if } p_d &\ge 0: \\
+p_d &\leftarrow 0, \\
+v_{ned,D} &\leftarrow \min(v_{ned,D},0), \\
+a_{ned,D} &\leftarrow \min(a_{ned,D},0).
+\end{align}
+The clamped NED velocity and acceleration are reprojected to body-frame derivatives used by the integrator.
 
 \subsection{Assumptions}
 \begin{itemize}
     \item Constant mass and inertia over one simulation step.
     \item Forces and moments are fully summed in body frame before the dynamics call.
+    \item Ground-contact clamp at $z_{ned}=0$: if $p_d\ge0$, then $p_d\leftarrow0$, and downward components are clamped by $v_{ned,D}\leftarrow\min(v_{ned,D},0)$ and $a_{ned,D}\leftarrow\min(a_{ned,D},0)$ before reprojection to body-frame derivatives.
     \item Explicit fixed-step lockstep integration.
 \end{itemize}
 
@@ -156,10 +172,10 @@ with quaternion normalization after each integration step.
 Vehicle parameters are declared in \texttt{src/vehicle/model/*.py}.
 
 \subsection{Iris (Multicopter)}
-\texttt{IrisParameters} defines mass, inertia, motor, and passive drag terms. For improved alignment with the jMAVSim multicopter style, inertia and rotor time constant are set to:
+\texttt{IrisParameters} defines mass, inertia, motor, and passive drag terms. The currently used stable defaults are:
 \begin{itemize}
-    \item $J_x=0.005$, $J_y=0.005$, $J_z=0.009$ kg m$^2$,
-    \item motor time constant $\tau_m=0.005$ s.
+    \item $J_x=0.029125$, $J_y=0.029125$, $J_z=0.055225$ kg m$^2$,
+    \item motor time constant $\tau_m=0.06$ s.
 \end{itemize}
 
 \subsubsection*{Force and Moment Models}
@@ -229,9 +245,9 @@ $f_{imu}$ & update rate & $250$ & Hz \\
 $f_{c,acc}$ & accelerometer LPF cutoff & $120$ & Hz \\
 $f_{c,gyro}$ & gyroscope LPF cutoff & $120$ & Hz \\
 $\sigma_{acc}$ & accelerometer noise density & $4.0\times10^{-3}$ & m/s$^2$/\(\sqrt{\text{Hz}}\) \\
-$\sigma_{gyro}$ & gyroscope noise density & $2\cdot35/3600$ (code converts) & deg/s/\(\sqrt{\text{Hz}}\) \\
+$\sigma_{gyro}$ & gyroscope noise density & $3.3937\times10^{-4}$ & rad/s/\(\sqrt{\text{Hz}}\) \\
 $rw_{acc}$ & accelerometer bias random walk & $6.0\times10^{-3}$ & m/s$^2\sqrt{\text{Hz}}$ \\
-$rw_{gyro}$ & gyroscope bias random walk & $2\cdot4/3600$ (code converts) & deg/s\(\sqrt{\text{Hz}}\) \\
+$rw_{gyro}$ & gyroscope bias random walk & $3.8785\times10^{-5}$ & rad/s\(\sqrt{\text{Hz}}\) \\
 $\tau_{ca}$ & accelerometer bias correlation time & $300$ & s \\
 $\tau_{cg}$ & gyroscope bias correlation time & $1000$ & s \\
 $a_{max}$ & accelerometer range & $\pm18g$ & m/s$^2$ \\
@@ -239,6 +255,27 @@ $\omega_{max}$ & gyroscope range & $\pm2000$ & deg/s \\
 \bottomrule
 \end{tabular}
 \end{center}
+
+\paragraph{Flow chart (ASCII)}
+{\footnotesize
+\begin{verbatim}
+[Input] y, ydot, q
+    |
+    v
+[Core]  a_imu_in -> f_spec
+        ([u_dot,v_dot,w_dot] + omega x v) + g_b
+    |
+    v
+[Model] LPF -> bias/noise -> saturation
+    |
+    v
+[Output] HIL_SENSOR.accel + HIL_SENSOR.gyro
+
+Trigger: SensorSuite.update() on each world update tick.
+Rate:    nominal f_imu = 250 Hz (model dt fallback).
+Gate:    none (no next_update_us gate in IMU class).
+\end{verbatim}
+}
 
 \paragraph{2) Sensor shaping (LPF + bias + noise)}
 \begin{align}
@@ -297,7 +334,7 @@ Here $\eta_{bm}(k)$ is the zero-mean Gaussian innovation that drives the magneto
 This channel feeds magnetometer fields in \texttt{HIL\_SENSOR}.
 
 \paragraph{Characteristic values (current parameterization)}
-All symbols in the table are defined in the equations above, with $f_{mag}=1/\Delta t$ and $rw_{mag}$ used to build the discrete innovation variance $\sigma_{b,d}$.
+All symbols in the table are defined in the equations above, with $f_{mag}=1/\Delta t$ and $rw_{mag}$ used to build the discrete innovation variance $\sigma_{bm,d}$.
 \begin{center}
 \begin{tabular}{llll}
 \toprule
@@ -314,6 +351,26 @@ $m_{ned}$ & runtime field input & $[0.21523,0.01,0.43]$ (Iris) & gauss \\
 \bottomrule
 \end{tabular}
 \end{center}
+
+\paragraph{Flow chart (ASCII)}
+{\footnotesize
+\begin{verbatim}
+[Input] q, m_ned
+    |
+    v
+[Core]  rotate: m_b = R_wb m_ned
+    |
+    v
+[Model] soft/hard-iron -> bias/noise
+    |
+    v
+[Output] HIL_SENSOR.mag
+
+Trigger: SensorSuite.update() on each world update tick.
+Rate:    nominal f_mag = 100 Hz (model dt fallback).
+Gate:    none (no next_update_us gate in MagnetometerSim).
+\end{verbatim}
+}
 
 \subsubsection*{Assumptions}
 \begin{itemize}
@@ -364,6 +421,26 @@ $h_0$ & home altitude default & $488$ & m \\
 \end{tabular}
 \end{center}
 
+\paragraph{Flow chart (ASCII)}
+{\footnotesize
+\begin{verbatim}
+[Input] p_d, v_ned
+    |
+    v
+[Core]  z_local -> h_amsl -> ISA P_ideal
+    |
+    v
+[Model] drift/noise -> P_meas
+    |
+    v
+[Output] static/dynamic/altitude -> HIL_SENSOR.baro
+
+Trigger: SensorSuite.update() on each world update tick.
+Rate:    nominal f_baro = 20 Hz (model dt fallback).
+Gate:    none (no next_update_us gate in BarometerSensor).
+\end{verbatim}
+}
+
 \subsubsection*{Assumptions}
 \begin{itemize}
     \item Standard atmosphere constants are fixed.
@@ -382,7 +459,7 @@ The GPS model in \texttt{src/vehicle/sensors/gps.py} perturbs local NED position
 \tilde{E}=p_e + \nu_E + \beta_E, \quad
 \tilde{D}=p_d + \nu_D + \beta_D.
 \end{align}
-Here $w_i(k)$ is the zero-mean stochastic driving term (Gaussian random walk excitation) for the GPS bias state on axis $i$.
+Here $w_i(k)$ is the zero-mean stochastic driving term (Gaussian random walk excitation) for the GPS bias state on axis $i$, with $w_i\in\{w_N,w_E,w_D\}$.
 In code this corresponds to the sampled \texttt{random\_walk[i]} used in the bias update before position reprojection.
 This forms noisy and bias-corrupted local position states from true simulation position.
 
@@ -422,6 +499,27 @@ $(\varphi_0,\lambda_0,h_0)$ & home origin defaults & $(47.397742^\circ,8.545594^
 \bottomrule
 \end{tabular}
 \end{center}
+
+\paragraph{Flow chart (ASCII)}
+{\footnotesize
+\begin{verbatim}
+[Input] p_ned, v_ned, t_us
+    |
+    v
+[Gate]  if t_us < next_update_us:
+          return last sample (gps_updated = false)
+    |
+    v
+[Core]  bias/noise states -> NED->LLA reprojection
+    |
+    v
+[Output] HIL_GPS payload (gps_updated = true)
+
+Trigger: SensorSuite.update(), then internal next_update_us check.
+Rate:    nominal f_gps = 5 Hz.
+Gate:    if t_us < next_update_us, return last sample and gps_updated=false.
+\end{verbatim}
+}
 
 \subsubsection*{Assumptions}
 \begin{itemize}
