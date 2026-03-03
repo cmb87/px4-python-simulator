@@ -111,3 +111,10 @@ src/systemcmds/topic_listener/listener_generated.cpp
 
 # colcon
 log/
+
+# Local LaTeX build artifacts
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc
+docs/*.pdf

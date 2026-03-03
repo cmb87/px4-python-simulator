@@ -19,15 +19,15 @@ class SensorSuite(SimComponentBase):
     def __init__(self):
         super().__init__()
         self.mag = MagnetometerSim()
-        self.mag.set_noise(False)
+        self.mag.set_noise(True)
         self.imu = ADIS16448IMU()
-        self.imu.set_noise(False)
+        self.imu.set_noise(True)
 
         self._sensor_params_initialized = False
 
         self.gps = GpsSensor()
         self.gps.set_home(47.397742, 8.545594, 488.0)
-        self.gps.set_noise(False)
+        self.gps.set_noise(True)
         self.gps.set_update_rate(5.0)
 
         self.baro = BarometerSensor()
