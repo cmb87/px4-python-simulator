@@ -2,6 +2,16 @@
 
 Python lockstep SITL bridge that runs the local 6DOF vehicle model and publishes MAVLink HIL sensor streams to PX4.
 
+## Python Package
+
+This repository is installable as a Python package.
+
+- Editable install: `pip install -e .`
+- Standard install: `pip install .`
+- Console entry point after install: `px4-python-sitl`
+
+The package metadata is defined in `pyproject.toml`.
+
 ## Architecture
 
 ```text
@@ -107,6 +117,24 @@ The IMU path in `vehicle/sensors/sensors.py` reconstructs accelerometer input fr
 `accel_for_imu = ydot_body_vel + omega x vel_body`
 
 This aligns the simulated accelerometer behavior with the Java implementation and keeps EKF turn behavior consistent.
+
+## Sensor Noise Defaults
+
+To better match jMAVSim-like behavior, IMU, magnetometer, GPS, and barometer noise paths are enabled by default in `SensorSuite`.
+
+## Technical Documentation (LaTeX)
+
+A full architecture document is available at `docs/architecture.tex`.
+
+- Build PDF: `make -C docs`
+- Output: `docs/architecture.pdf`
+
+The document covers:
+
+- 6DOF dynamics kernel
+- vehicle models (`iris`, `x8`, `ts04`)
+- sensor and force models
+- MAVLink HIL and external interfaces (UDP transfer alignment and WebSocket ground truth)
 
 ## Run
 
