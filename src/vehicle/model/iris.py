@@ -10,9 +10,9 @@ class IrisParameters:
         self.mass = 1.5
 
         self.rho = 1.225
-        self.Jx = 0.005
-        self.Jy = 0.005
-        self.Jz = 0.009
+        self.Jx = 0.029125
+        self.Jy = 0.029125
+        self.Jz = 0.055225
         self.Jxz = 0.0
 
         self.I_cg = np.array(
@@ -29,7 +29,7 @@ class IrisParameters:
         self.arm_length = 0.225
         self.motor_full_thrust = 12.0
         self.motor_full_torque = 0.08
-        self.motor_time_constant = 0.005
+        self.motor_time_constant = 0.06
         self.motor_max_omega = 900.0
         self.rotor_polar_inertia = 6.0e-5
 

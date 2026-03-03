@@ -75,21 +75,18 @@ def dynamics(t, y, P, tau, z_ground = 100.0):
     # === Convert body acceleration to NED frame
     accel_ned = Mgf @ accelBf
 
-    # === Simple ground contact condition
-    
-    if False:
-        if pos[2] >= 0:
-        # print("Ground contact detected, setting vertical velocity and acceleration to zero.")
-            if accel_ned[2] > 0:  # Trying to fall
-                accel_ned[2] = 0.0
-                accelBf = Mfg @ accel_ned  # Reproject back to body frame
+    # === Simple ground contact condition at z_ned = 0.0
+    if pos[2] >= 0.0:
+        # Do not allow downward acceleration/velocity while on ground.
+        if accel_ned[2] > 0.0:
+            accel_ned[2] = 0.0
+            accelBf = Mfg @ accel_ned
 
-            if vel_ned[2] > 0:  # Currently falling
-                vel_ned[2] = 0.0
-                vel = Mfg @ vel_ned  # Reproject back to body frame
+        if vel_ned[2] > 0.0:
+            vel_ned[2] = 0.0
+            vel = Mfg @ vel_ned
 
-            pos[2] = 0.0
-            
+        pos[2] = 0.0
 
     # ===  Angular Acceleration
     aux1 = np.matmul(P.I_cg, Omega)
