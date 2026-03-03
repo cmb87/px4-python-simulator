@@ -1,7 +1,11 @@
 import numpy as np
 from quaternion import Quaternion
 import sys
+import logging
 from base_component import SimComponentBase
+
+
+logger = logging.getLogger(__name__)
 
 def MOmega(OMEGAkf):
     p, q, r = OMEGAkf[0], OMEGAkf[1], OMEGAkf[2]
@@ -13,6 +17,7 @@ class Dynamics6DOF(SimComponentBase):
     def __init__(self, z_ground=100.0):
         super().__init__()
         self.z_ground = z_ground
+        self._ground_contact_latched = False
 
     def update(self, t_us, paused):
         if paused:
@@ -27,6 +32,15 @@ class Dynamics6DOF(SimComponentBase):
 
         t_s = float(t_us) / 1e6
         self.last_output = dynamics(t_s, y, P, tau, z_ground=self.z_ground)
+
+        z_ned = float(y[2])
+        on_ground = z_ned >= 0.0
+        if on_ground and not self._ground_contact_latched:
+            logger.info("Ground contact at t=%.3fs, z_ned=%.3f m", t_s, z_ned)
+            self._ground_contact_latched = True
+        elif (not on_ground) and self._ground_contact_latched:
+            self._ground_contact_latched = False
+
         self._last_t_us = int(t_us)
         return self.last_output
 
