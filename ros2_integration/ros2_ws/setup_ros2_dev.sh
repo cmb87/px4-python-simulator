@@ -21,6 +21,7 @@ apt-get install -y --no-install-recommends \
   libavformat-dev \
   libavutil-dev \
   libboost-system-dev \
+  libjpeg-dev \
   libswresample-dev \
   libswscale-dev \
   libwebsocketpp-dev \
@@ -41,7 +42,7 @@ rosdep update
 source "/opt/ros/${ROS_DISTRO_NAME}/setup.bash"
 
 python3 -m pip install -e "${REPO_ROOT}" || python3 -m pip install "${REPO_ROOT}"
-python3 -m pip install --upgrade aiohttp aiortc numpy pymavlink
+python3 -m pip install --upgrade numpy pymavlink
 
 rosdep install \
   --from-paths "${ROS2_SRC_ROOT}" \
