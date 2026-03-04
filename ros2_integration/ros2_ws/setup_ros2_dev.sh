@@ -13,9 +13,18 @@ echo "[setup] Using repo root: ${REPO_ROOT}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
+  ffmpeg \
   git \
+  libavcodec-dev \
+  libavdevice-dev \
+  libavfilter-dev \
+  libavformat-dev \
+  libavutil-dev \
   libboost-system-dev \
+  libswresample-dev \
+  libswscale-dev \
   libwebsocketpp-dev \
+  pkg-config \
   python3-pip \
   python3-colcon-common-extensions \
   python3-rosdep \
@@ -32,7 +41,7 @@ rosdep update
 source "/opt/ros/${ROS_DISTRO_NAME}/setup.bash"
 
 python3 -m pip install -e "${REPO_ROOT}" || python3 -m pip install "${REPO_ROOT}"
-python3 -m pip install --upgrade numpy pymavlink
+python3 -m pip install --upgrade aiohttp aiortc numpy pymavlink
 
 rosdep install \
   --from-paths "${ROS2_SRC_ROOT}" \

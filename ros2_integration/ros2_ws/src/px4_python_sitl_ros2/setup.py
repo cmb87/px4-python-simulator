@@ -16,6 +16,7 @@ setup(
             [
                 "launch/px4_lockstep_ros2.launch.py",
                 "launch/px4_lockstep_with_ws_bridge.launch.py",
+                "launch/px4_lockstep_with_ws_and_webrtc.launch.py",
             ],
         ),
     ],
