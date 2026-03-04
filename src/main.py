@@ -2,7 +2,6 @@
 """MAVLink lockstep simulation endpoint backed by vehicle.World."""
 
 import os
-import sys
 import time
 import logging
 from typing import Any
@@ -10,11 +9,8 @@ from typing import Any
 import numpy as np
 from pymavlink import mavutil
 
-vehicle_dir = os.path.join(os.path.dirname(__file__), "vehicle")
-if vehicle_dir not in sys.path:
-    sys.path.insert(0, vehicle_dir)
-
-from world import World
+from px4_python_sitl.sim_utils import controls_to_u
+from px4_python_sitl.vehicle.world import World
 from transfer_alignment import (
     TransferAlignmentMasterLink,
     TransferAlignmentSlaveLink,
@@ -55,34 +51,14 @@ GT_WS_PORT = int(os.getenv("SIM_GT_WS_PORT", "8765"))
 GT_WS_ENABLED = os.getenv("SIM_GT_WS_ENABLED", "auto").strip().lower()
 VEHICLE_MODEL = os.getenv("SIM_VEHICLE_MODEL", "ts04").strip().lower()
 TS04_PITCH90_START = os.getenv("SIM_TS04_PITCH90_START", "1").strip().lower() in {"1", "true", "yes", "on"}
-TS04_MOTOR_MAP = os.getenv("SIM_TS04_MOTOR_MAP", "0,1,2,3")
 
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 logger = logging.getLogger(__name__)
 AVAILABLE_VEHICLE_MODELS = ("x8", "iris", "ts04")
 
 
-
-
-def clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
-
-
 def get_sim_millis(sim_time_us: int) -> int:
     return sim_time_us // 1000
-
-
-def parse_motor_map(raw: str) -> tuple[int, int, int, int]:
-    tokens = [tok.strip() for tok in raw.split(",") if tok.strip()]
-    if len(tokens) != 4:
-        raise ValueError(f"Expected 4 entries in SIM_TS04_MOTOR_MAP, got '{raw}'")
-    try:
-        values = tuple(int(tok) for tok in tokens)
-    except ValueError as exc:
-        raise ValueError(f"SIM_TS04_MOTOR_MAP must contain integers, got '{raw}'") from exc
-    if sorted(values) != [0, 1, 2, 3]:
-        raise ValueError(f"SIM_TS04_MOTOR_MAP must be a permutation of 0,1,2,3, got '{raw}'")
-    return (values[0], values[1], values[2], values[3])
 
 
 def parse_env_float(name: str, default: float) -> float:
@@ -143,30 +119,6 @@ def parse_gt_ws_enabled(role: str, raw: str) -> bool:
     raise ValueError(f"SIM_GT_WS_ENABLED must be auto|true|false, got '{raw}'")
 
 
-def controls_to_u(
-    latest_controls: tuple[float, ...] | None,
-    armed: bool,
-    ts04_motor_map: tuple[int, int, int, int] = (0, 1, 2, 3),
-    vehicle_model: str = "x8",
-) -> np.ndarray:
-    u = np.zeros(4)
-    if (not armed) or latest_controls is None:
-        return u
-    if len(latest_controls) > 0:
-        u[0] = float(latest_controls[0])
-    if len(latest_controls) > 1:
-        u[1] = float(latest_controls[1])
-    if len(latest_controls) > 2:
-        u[2] = float(latest_controls[2])
-    if len(latest_controls) > 3:
-        u[3] = clamp(float(latest_controls[3]), 0.0, 1.0)
-
-    if vehicle_model == "ts04":
-        u = u[list(ts04_motor_map)]
-
-    return u
-
-
 def controls_to_u8(latest_controls: tuple[float, ...] | None) -> list[float]:
     if latest_controls is None:
         return [0.0] * 8
@@ -213,9 +165,6 @@ def simulation_main() -> None:
         gps_origin["lon"],
         gps_origin["alt"],
     )
-    ts04_motor_map = parse_motor_map(TS04_MOTOR_MAP)
-    if vehicle_model == "ts04":
-        logger.info("TS04 motor map (sim motor idx -> HIL control idx): %s", ts04_motor_map)
     first_hb = conn.wait_heartbeat()
     px4_sysid = first_hb.get_srcSystem()
     if px4_sysid > 0:
@@ -365,8 +314,6 @@ def simulation_main() -> None:
                 controls_to_u(
                     latest_controls,
                     armed,
-                    ts04_motor_map=ts04_motor_map,
-                    vehicle_model=vehicle_model,
                 )
             )
 

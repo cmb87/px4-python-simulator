@@ -1,0 +1,2 @@
+[console_scripts]
+px4-python-sitl = main:main
