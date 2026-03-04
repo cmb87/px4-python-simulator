@@ -1,0 +1,6 @@
+numpy>=1.24
+pymavlink>=2.4.41
+websockets>=11.0
+
+[viz]
+matplotlib>=3.7

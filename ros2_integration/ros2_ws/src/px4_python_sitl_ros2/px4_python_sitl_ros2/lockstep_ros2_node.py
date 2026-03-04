@@ -1,141 +1,34 @@
 #!/usr/bin/env python3
 
+import rclpy
+from geometry_msgs.msg import TransformStamped, TwistStamped, Vector3Stamped
+from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
+from sensor_msgs.msg import NavSatFix, NavSatStatus
+from std_msgs.msg import Float32MultiArray, UInt8
+from tf2_msgs.msg import TFMessage
+
 import math
-import sys
 import time
-from pathlib import Path
 from typing import Any
 
 import numpy as np
-import rclpy
-from geometry_msgs.msg import TransformStamped, TwistStamped
-from nav_msgs.msg import Odometry
 from pymavlink import mavutil
-from rclpy.node import Node
-from sensor_msgs.msg import NavSatFix, NavSatStatus
-from tf2_ros import TransformBroadcaster
 
-
-def _add_sim_import_paths() -> None:
-    file_path = Path(__file__).resolve()
-    repo_root = file_path.parents[5]
-    src_dir = repo_root / "src"
-    vehicle_dir = src_dir / "vehicle"
-    for p in (str(src_dir), str(vehicle_dir)):
-        if p not in sys.path:
-            sys.path.insert(0, p)
-
-
-_add_sim_import_paths()
-from world import World  # noqa: E402
+from px4_python_sitl.sim_utils import (
+    controls_to_u,
+    ned_frd_quat_to_enu_flu_quat,
+    ned_to_enu_position,
+)
+from px4_python_sitl.vehicle.world import World
 
 
 MAVLINK_MSG_ID_HIL_STATE_QUATERNION = 115
 RATE_HZ_DEFAULT = 250
 CHECK_FACTOR = 2
-DT_US_DEFAULT = int(1e6 / RATE_HZ_DEFAULT)
 HEARTBEAT_INTERVAL_US = 1_000_000
 SYSTEM_TIME_INTERVAL_US = 1_000_000
 GPS_START_DELAY_US = 1_000_000
-
-
-def clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
-
-
-def parse_motor_map(raw: str) -> tuple[int, int, int, int]:
-    tokens = [tok.strip() for tok in raw.split(",") if tok.strip()]
-    if len(tokens) != 4:
-        raise ValueError(f"Expected 4 entries in ts04_motor_map, got '{raw}'")
-    values = tuple(int(tok) for tok in tokens)
-    if sorted(values) != [0, 1, 2, 3]:
-        raise ValueError(f"ts04_motor_map must be a permutation of 0,1,2,3, got '{raw}'")
-    return (values[0], values[1], values[2], values[3])
-
-
-def controls_to_u(
-    latest_controls: tuple[float, ...] | None,
-    armed: bool,
-    ts04_motor_map: tuple[int, int, int, int],
-    vehicle_model: str,
-) -> np.ndarray:
-    u = np.zeros(4)
-    if (not armed) or latest_controls is None:
-        return u
-    if len(latest_controls) > 0:
-        u[0] = float(latest_controls[0])
-    if len(latest_controls) > 1:
-        u[1] = float(latest_controls[1])
-    if len(latest_controls) > 2:
-        u[2] = float(latest_controls[2])
-    if len(latest_controls) > 3:
-        u[3] = clamp(float(latest_controls[3]), 0.0, 1.0)
-    if vehicle_model == "ts04":
-        u = u[list(ts04_motor_map)]
-    return u
-
-
-def quat_wxyz_to_rot(q: np.ndarray) -> np.ndarray:
-    w, x, y, z = [float(v) for v in q]
-    n = math.sqrt(w * w + x * x + y * y + z * z)
-    if n <= 0.0:
-        return np.eye(3)
-    w, x, y, z = w / n, x / n, y / n, z / n
-    return np.array(
-        [
-            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
-            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
-            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
-        ],
-        dtype=float,
-    )
-
-
-def rot_to_quat_wxyz(R: np.ndarray) -> np.ndarray:
-    tr = float(np.trace(R))
-    if tr > 0.0:
-        s = math.sqrt(tr + 1.0) * 2.0
-        w = 0.25 * s
-        x = (R[2, 1] - R[1, 2]) / s
-        y = (R[0, 2] - R[2, 0]) / s
-        z = (R[1, 0] - R[0, 1]) / s
-    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
-        s = math.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0
-        w = (R[2, 1] - R[1, 2]) / s
-        x = 0.25 * s
-        y = (R[0, 1] + R[1, 0]) / s
-        z = (R[0, 2] + R[2, 0]) / s
-    elif R[1, 1] > R[2, 2]:
-        s = math.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0
-        w = (R[0, 2] - R[2, 0]) / s
-        x = (R[0, 1] + R[1, 0]) / s
-        y = 0.25 * s
-        z = (R[1, 2] + R[2, 1]) / s
-    else:
-        s = math.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0
-        w = (R[1, 0] - R[0, 1]) / s
-        x = (R[0, 2] + R[2, 0]) / s
-        y = (R[1, 2] + R[2, 1]) / s
-        z = 0.25 * s
-    q = np.array([w, x, y, z], dtype=float)
-    qn = np.linalg.norm(q)
-    return q / qn if qn > 0.0 else np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
-
-
-def ned_to_enu_position(p_ned: np.ndarray) -> np.ndarray:
-    return np.array([p_ned[1], p_ned[0], -p_ned[2]], dtype=float)
-
-
-def frd_to_flu_vector(v_frd: np.ndarray) -> np.ndarray:
-    return np.array([v_frd[0], -v_frd[1], -v_frd[2]], dtype=float)
-
-
-def ned_frd_quat_to_enu_flu_quat(q_wxyz: np.ndarray) -> np.ndarray:
-    R_ned_frd = quat_wxyz_to_rot(q_wxyz)
-    T_enu2ned = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]], dtype=float)
-    T_frd2flu = np.diag([1.0, -1.0, -1.0])
-    R_enu_flu = T_frd2flu @ R_ned_frd @ T_enu2ned
-    return rot_to_quat_wxyz(R_enu_flu)
 
 
 class Px4LockstepRos2Node(Node):
@@ -147,19 +40,23 @@ class Px4LockstepRos2Node(Node):
         self.declare_parameter("vehicle_model", "ts04")
         self.declare_parameter("rate_hz", RATE_HZ_DEFAULT)
         self.declare_parameter("ts04_pitch90_start", True)
-        self.declare_parameter("ts04_motor_map", "0,1,2,3")
         self.declare_parameter("gps_origin_lat", 47.397742)
         self.declare_parameter("gps_origin_lon", 8.545594)
         self.declare_parameter("gps_origin_alt", 470.0)
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("child_frame_id", "base_link")
+        self.declare_parameter("tf_topic", "/sim/tf")
+        self.declare_parameter("gps_fix_topic", "/sim/gps/fix")
+        self.declare_parameter("gps_vel_topic", "/sim/gps/vel")
+        self.declare_parameter("actuators_topic", "/sim/actuators")
+        self.declare_parameter("aero_topic", "/sim/aero")
+        self.declare_parameter("sysid_topic", "/sim/px4_sysid")
 
         self.mavlink_bind_host = str(self.get_parameter("mavlink_bind_host").value)
         self.mavlink_bind_port = int(self.get_parameter("mavlink_bind_port").value)
         self.vehicle_model = str(self.get_parameter("vehicle_model").value).strip().lower()
         self.rate_hz = int(self.get_parameter("rate_hz").value)
         self.ts04_pitch90_start = bool(self.get_parameter("ts04_pitch90_start").value)
-        self.ts04_motor_map = parse_motor_map(str(self.get_parameter("ts04_motor_map").value))
         self.gps_origin = {
             "lat": float(self.get_parameter("gps_origin_lat").value),
             "lon": float(self.get_parameter("gps_origin_lon").value),
@@ -167,6 +64,12 @@ class Px4LockstepRos2Node(Node):
         }
         self.frame_id = str(self.get_parameter("frame_id").value)
         self.child_frame_id = str(self.get_parameter("child_frame_id").value)
+        self.tf_topic = str(self.get_parameter("tf_topic").value)
+        self.gps_fix_topic = str(self.get_parameter("gps_fix_topic").value)
+        self.gps_vel_topic = str(self.get_parameter("gps_vel_topic").value)
+        self.actuators_topic = str(self.get_parameter("actuators_topic").value)
+        self.aero_topic = str(self.get_parameter("aero_topic").value)
+        self.sysid_topic = str(self.get_parameter("sysid_topic").value)
 
         self.dt_us = int(1e6 / max(1, self.rate_hz))
         self.sim_time_us = 0
@@ -189,6 +92,7 @@ class Px4LockstepRos2Node(Node):
         self.get_logger().info(f"Waiting for PX4 heartbeat on {endpoint} ...")
         hb = self.conn.wait_heartbeat()
         px4_sysid = hb.get_srcSystem()
+        self.px4_sysid = int(px4_sysid if px4_sysid > 0 else 1)
         if px4_sysid > 0:
             self.conn.source_system = px4_sysid
             self.conn.mav.srcSystem = px4_sysid
@@ -209,13 +113,25 @@ class Px4LockstepRos2Node(Node):
         )
         self.world.P.gps_origin = dict(self.gps_origin)
 
-        self.tf_broadcaster = TransformBroadcaster(self)
-        self.odom_pub = self.create_publisher(Odometry, "/sim/odom", 10)
-        self.gps_fix_pub = self.create_publisher(NavSatFix, "/sim/gps/fix", 10)
-        self.gps_vel_pub = self.create_publisher(TwistStamped, "/sim/gps/vel", 10)
+        self.tf_pub = self.create_publisher(TFMessage, self.tf_topic, 10)
+        self.gps_fix_pub = self.create_publisher(NavSatFix, self.gps_fix_topic, 10)
+        self.gps_vel_pub = self.create_publisher(TwistStamped, self.gps_vel_topic, 10)
+        self.actuators_pub = self.create_publisher(Float32MultiArray, self.actuators_topic, 10)
+        self.aero_pub = self.create_publisher(Vector3Stamped, self.aero_topic, 10)
+        sysid_qos = QoSProfile(depth=1)
+        sysid_qos.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
+        sysid_qos.reliability = QoSReliabilityPolicy.RELIABLE
+        self.sysid_pub = self.create_publisher(UInt8, self.sysid_topic, sysid_qos)
 
         self.timer = self.create_timer(1.0 / max(1, self.rate_hz), self._step)
+        self.sysid_timer = self.create_timer(1.0, self._publish_sysid)
+        self._publish_sysid()
         self.get_logger().info("ROS2 lockstep node running")
+
+    def _publish_sysid(self) -> None:
+        msg = UInt8()
+        msg.data = int(self.px4_sysid) & 0xFF
+        self.sysid_pub.publish(msg)
 
     def _step(self) -> None:
         while True:
@@ -248,8 +164,6 @@ class Px4LockstepRos2Node(Node):
             controls_to_u(
                 latest_controls=self.latest_controls,
                 armed=self.armed,
-                ts04_motor_map=self.ts04_motor_map,
-                vehicle_model=self.vehicle_model,
             )
         )
 
@@ -359,20 +273,39 @@ class Px4LockstepRos2Node(Node):
                 0,
             )
 
-        self._publish_ros2_ground_truth(y, world_out["ydot"], gps)
+        self._publish_ros2_ground_truth(y, gps)
 
-    def _publish_ros2_ground_truth(self, y: np.ndarray, ydot: np.ndarray, gps: np.ndarray) -> None:
+    @staticmethod
+    def _controls_to_u8(latest_controls: tuple[float, ...] | None) -> list[float]:
+        if latest_controls is None:
+            return [0.0] * 8
+        out = [0.0] * 8
+        n = min(len(latest_controls), 8)
+        for i in range(n):
+            out[i] = float(latest_controls[i])
+        return out
+
+    def _compute_aero(self, y: np.ndarray) -> tuple[float | None, float | None, float]:
+        wind = np.asarray(self.world.wind[:3], dtype=float)
+        vel_rel = np.asarray(y[7:10], dtype=float) - wind
+        u_r, v_r, w_r = vel_rel
+        va_mps = float(np.linalg.norm(vel_rel))
+        if va_mps <= 1e-5:
+            return None, None, va_mps
+        alpha_deg = float(np.rad2deg(np.arctan2(w_r, u_r)))
+        beta_deg = float(np.rad2deg(np.arcsin(np.clip(v_r / va_mps, -1.0, 1.0))))
+        return alpha_deg, beta_deg, va_mps
+
+    def _publish_ros2_ground_truth(self, y: np.ndarray, gps: np.ndarray) -> None:
         stamp = self.get_clock().now().to_msg()
+        u = self._controls_to_u8(self.latest_controls)
+        alpha_deg, beta_deg, va_mps = self._compute_aero(y)
 
         p_ned = y[0:3]
         q_ned_frd = y[3:7]
-        v_body_frd = y[7:10]
-        w_body_frd = y[10:13]
 
         p_enu = ned_to_enu_position(p_ned)
         q_enu_flu = ned_frd_quat_to_enu_flu_quat(q_ned_frd)
-        v_body_flu = frd_to_flu_vector(v_body_frd)
-        w_body_flu = frd_to_flu_vector(w_body_frd)
 
         tf_msg = TransformStamped()
         tf_msg.header.stamp = stamp
@@ -385,26 +318,7 @@ class Px4LockstepRos2Node(Node):
         tf_msg.transform.rotation.x = float(q_enu_flu[1])
         tf_msg.transform.rotation.y = float(q_enu_flu[2])
         tf_msg.transform.rotation.z = float(q_enu_flu[3])
-        self.tf_broadcaster.sendTransform(tf_msg)
-
-        odom = Odometry()
-        odom.header.stamp = stamp
-        odom.header.frame_id = self.frame_id
-        odom.child_frame_id = self.child_frame_id
-        odom.pose.pose.position.x = float(p_enu[0])
-        odom.pose.pose.position.y = float(p_enu[1])
-        odom.pose.pose.position.z = float(p_enu[2])
-        odom.pose.pose.orientation.w = float(q_enu_flu[0])
-        odom.pose.pose.orientation.x = float(q_enu_flu[1])
-        odom.pose.pose.orientation.y = float(q_enu_flu[2])
-        odom.pose.pose.orientation.z = float(q_enu_flu[3])
-        odom.twist.twist.linear.x = float(v_body_flu[0])
-        odom.twist.twist.linear.y = float(v_body_flu[1])
-        odom.twist.twist.linear.z = float(v_body_flu[2])
-        odom.twist.twist.angular.x = float(w_body_flu[0])
-        odom.twist.twist.angular.y = float(w_body_flu[1])
-        odom.twist.twist.angular.z = float(w_body_flu[2])
-        self.odom_pub.publish(odom)
+        self.tf_pub.publish(TFMessage(transforms=[tf_msg]))
 
         gps_fix = NavSatFix()
         gps_fix.header.stamp = stamp
@@ -423,6 +337,18 @@ class Px4LockstepRos2Node(Node):
         gps_vel.twist.linear.y = float(gps[3])
         gps_vel.twist.linear.z = float(gps[5])
         self.gps_vel_pub.publish(gps_vel)
+
+        actuators = Float32MultiArray()
+        actuators.data = [float(v) for v in u]
+        self.actuators_pub.publish(actuators)
+
+        aero = Vector3Stamped()
+        aero.header.stamp = stamp
+        aero.header.frame_id = self.frame_id
+        aero.vector.x = float(alpha_deg) if alpha_deg is not None else float("nan")
+        aero.vector.y = float(beta_deg) if beta_deg is not None else float("nan")
+        aero.vector.z = va_mps
+        self.aero_pub.publish(aero)
 
 
 def main(args: list[str] | None = None) -> None:

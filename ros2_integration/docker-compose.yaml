@@ -1,0 +1,15 @@
+services:
+  ros2:
+    image: ros:${ROS_DISTRO:-humble}
+    container_name: ros2_${ROS_DISTRO:-humble}
+    network_mode: host
+    volumes:
+      - ..:/workspaces/px4-python-sitl:rw
+      - pip-cache:/root/.cache/pip
+    stdin_open: true
+    tty: true
+    working_dir: /workspaces/px4-python-sitl
+    command: bash -lc "sleep infinity"
+
+volumes:
+  pip-cache:

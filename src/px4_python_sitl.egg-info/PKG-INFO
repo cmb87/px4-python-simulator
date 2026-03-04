@@ -1,3 +1,17 @@
+Metadata-Version: 2.4
+Name: px4-python-sitl
+Version: 0.1.0
+Summary: Python lockstep SITL bridge with 6DOF vehicle and MAVLink HIL streams
+Author: PX4 Python SITL Contributors
+License: Proprietary
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.24
+Requires-Dist: pymavlink>=2.4.41
+Requires-Dist: websockets>=11.0
+Provides-Extra: viz
+Requires-Dist: matplotlib>=3.7; extra == "viz"
+
 # PX4 Python SITL
 
 Python lockstep SITL bridge that runs the local 6DOF vehicle model and publishes MAVLink HIL sensor streams to PX4.

@@ -32,4 +32,4 @@ py-modules = ["main", "transfer_alignment", "dummy_ground_truth_ws_publisher"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["vehicle*", "visualizer*"]
+include = ["vehicle*", "visualizer*", "px4_python_sitl*"]
