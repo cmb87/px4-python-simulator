@@ -45,10 +45,15 @@ public:
     image_topic_ = this->declare_parameter<std::string>("image_topic", "/sim/image");
     frame_id_ = this->declare_parameter<std::string>("frame_id", "camera");
 
-    auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
-    qos.best_effort();
-    qos.durability_volatile();
-    image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(image_topic_, qos);
+    //auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
+    //qos.best_effort();
+    //qos.durability_volatile();
+    //image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(image_topic_, qos);
+
+    auto qos = rclcpp::SensorDataQoS().keep_last(1);
+
+    image_pub_ = this->create_publisher<sensor_msgs::msg::Image>( image_topic_, qos);
+
 
     stats_timer_ = this->create_wall_timer(
       std::chrono::seconds(1),
