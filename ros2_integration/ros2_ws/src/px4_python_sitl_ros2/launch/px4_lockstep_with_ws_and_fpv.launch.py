@@ -22,9 +22,9 @@ def generate_launch_description() -> LaunchDescription:
     ws_host = LaunchConfiguration("ws_host")
     ws_port = LaunchConfiguration("ws_port")
 
-    webrtc_host = LaunchConfiguration("webrtc_host")
-    webrtc_port = LaunchConfiguration("webrtc_port")
-    webrtc_frame_id = LaunchConfiguration("webrtc_frame_id")
+    fpv_ws_host = LaunchConfiguration("fpv_ws_host")
+    fpv_ws_port = LaunchConfiguration("fpv_ws_port")
+    fpv_ws_frame_id = LaunchConfiguration("fpv_ws_frame_id")
 
     tf_topic = [sim_ns, "/tf"]
     gps_fix_topic = [sim_ns, "/gps/fix"]
@@ -49,9 +49,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("child_frame_id", default_value="base_link"),
             DeclareLaunchArgument("ws_host", default_value="0.0.0.0"),
             DeclareLaunchArgument("ws_port", default_value="8765"),
-            DeclareLaunchArgument("webrtc_host", default_value="127.0.0.1"),
-            DeclareLaunchArgument("webrtc_port", default_value="9001"),
-            DeclareLaunchArgument("webrtc_frame_id", default_value="camera"),
+            DeclareLaunchArgument("fpv_ws_host", default_value="127.0.0.1"),
+            DeclareLaunchArgument("fpv_ws_port", default_value="9001"),
+            DeclareLaunchArgument("fpv_ws_frame_id", default_value="camera"),
             Node(
                 package="px4_python_sitl_ros2",
                 executable="px4_lockstep_ros2_node",
@@ -106,15 +106,15 @@ def generate_launch_description() -> LaunchDescription:
                 ],
             ),
             Node(
-                package="webrtc_fpv_ros2_bridge",
-                executable="webrtc_fpv_bridge_node",
-                name="webrtc_fpv_bridge_node",
+                package="websocket_fpv_ros2_bridge",
+                executable="websocket_fpv_bridge_node",
+                name="websocket_fpv_bridge_node",
                 output="screen",
                 parameters=[
                     {
-                        "host": webrtc_host,
-                        "port": webrtc_port,
-                        "frame_id": webrtc_frame_id,
+                        "host": fpv_ws_host,
+                        "port": fpv_ws_port,
+                        "frame_id": fpv_ws_frame_id,
                         "image_topic": image_topic,
                     }
                 ],

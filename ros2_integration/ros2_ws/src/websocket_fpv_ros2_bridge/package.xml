@@ -1,22 +1,20 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>px4_sitl_ws_bridge</name>
+  <name>websocket_fpv_ros2_bridge</name>
   <version>0.1.0</version>
-  <description>ROS2 to websocket bridge for px4_python_sitl simulator topics</description>
+  <description>ROS2 websocket FPV receiver publishing image topics</description>
   <maintainer email="noreply@example.com">PX4 Python SITL Contributors</maintainer>
   <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclcpp</depend>
-  <depend>rclcpp_components</depend>
-  <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>std_msgs</depend>
-  <depend>tf2_msgs</depend>
   <depend>boost</depend>
   <build_depend>libwebsocketpp-dev</build_depend>
   <exec_depend>libwebsocketpp-dev</exec_depend>
+  <build_depend>libjpeg</build_depend>
+  <exec_depend>libjpeg</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

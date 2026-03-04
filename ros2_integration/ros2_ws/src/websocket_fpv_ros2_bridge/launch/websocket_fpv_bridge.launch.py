@@ -21,9 +21,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("port", default_value="9001"),
             DeclareLaunchArgument("frame_id", default_value="camera"),
             Node(
-                package="webrtc_fpv_ros2_bridge",
-                executable="webrtc_fpv_bridge_node",
-                name="webrtc_fpv_bridge_node",
+                package="websocket_fpv_ros2_bridge",
+                executable="websocket_fpv_bridge_node",
+                name="websocket_fpv_bridge_node",
                 output="screen",
                 parameters=[
                     {
