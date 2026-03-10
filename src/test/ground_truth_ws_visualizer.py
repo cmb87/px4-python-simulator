@@ -3,8 +3,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
-import sys
 import threading
 import time
 from collections import deque
@@ -18,12 +16,7 @@ try:
 except ImportError as exc:
     raise SystemExit("Please install the 'websockets' package to use this visualizer") from exc
 
-
-vehicle_dir = os.path.join(os.path.dirname(__file__), "vehicle")
-if vehicle_dir not in sys.path:
-    sys.path.insert(0, vehicle_dir)
-
-from quaternion import Quaternion
+from vehicle.quaternion import Quaternion
 
 
 logger = logging.getLogger(__name__)

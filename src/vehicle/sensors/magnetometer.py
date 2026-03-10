@@ -1,7 +1,8 @@
 import logging
 import numpy as np
-from quaternion import Quaternion
-from base_component import SimComponentBase
+
+from ..base_component import SimComponentBase
+from ..quaternion import Quaternion
 
 
 logger = logging.getLogger(__name__)

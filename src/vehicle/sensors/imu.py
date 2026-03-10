@@ -1,7 +1,8 @@
 import logging
 import numpy as np
-from quaternion import Quaternion
-from base_component import SimComponentBase
+
+from ..base_component import SimComponentBase
+from ..quaternion import Quaternion
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,8 @@ class ADIS16448IMU(SimComponentBase):
         self._gyro_lpf_state = np.zeros(3)
         self._acc_lpf_initialized = False
         self._gyro_lpf_initialized = False
+        self._acc_saturation_latched = False
+        self._gyro_saturation_latched = False
 
     def set_noise(self, enabled: bool):
         self.enable_noise = bool(enabled)
@@ -91,8 +94,40 @@ class ADIS16448IMU(SimComponentBase):
             acc_meas = acc_filtered + self.acc_bias
             gyro_meas = gyro_filtered + self.gyro_bias
 
-        acc_meas = np.clip(acc_meas, -self.acc_range_mps2, self.acc_range_mps2)
-        gyro_meas = np.clip(gyro_meas, -self.gyro_range_rps, self.gyro_range_rps)
+        acc_raw = np.asarray(acc_meas, dtype=float)
+        gyro_raw = np.asarray(gyro_meas, dtype=float)
+        acc_meas = np.clip(acc_raw, -self.acc_range_mps2, self.acc_range_mps2)
+        gyro_meas = np.clip(gyro_raw, -self.gyro_range_rps, self.gyro_range_rps)
+
+        acc_raw_str = np.array2string(acc_raw, formatter={"float_kind": lambda x: f"{x:.2f}"})
+        acc_clip_str = np.array2string(acc_meas, formatter={"float_kind": lambda x: f"{x:.2f}"})
+        gyro_raw_str = np.array2string(gyro_raw, formatter={"float_kind": lambda x: f"{x:.2f}"})
+        gyro_clip_str = np.array2string(gyro_meas, formatter={"float_kind": lambda x: f"{x:.2f}"})
+
+        acc_is_clipped = bool(np.any(np.abs(acc_raw - acc_meas) > 1e-12))
+        gyro_is_clipped = bool(np.any(np.abs(gyro_raw - gyro_meas) > 1e-12))
+
+        if acc_is_clipped and (not self._acc_saturation_latched):
+            self._acc_saturation_latched = True
+            logger.info(
+                "IMU accelerometer saturation: raw=%s clipped=%s limit=%.3f m/s^2",
+                acc_raw_str,
+                acc_clip_str,
+                float(self.acc_range_mps2),
+            )
+        elif (not acc_is_clipped) and self._acc_saturation_latched:
+            self._acc_saturation_latched = False
+
+        if gyro_is_clipped and (not self._gyro_saturation_latched):
+            self._gyro_saturation_latched = True
+            logger.info(
+                "IMU gyroscope saturation: raw=%s clipped=%s limit=%.3f rad/s",
+                gyro_raw_str,
+                gyro_clip_str,
+                float(self.gyro_range_rps),
+            )
+        elif (not gyro_is_clipped) and self._gyro_saturation_latched:
+            self._gyro_saturation_latched = False
 
         self.last_output = (acc_meas, gyro_meas)
         return self.last_output

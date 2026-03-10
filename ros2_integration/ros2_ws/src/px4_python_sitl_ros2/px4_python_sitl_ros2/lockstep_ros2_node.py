@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+
 import rclpy
 from geometry_msgs.msg import TransformStamped, TwistStamped, Vector3Stamped
 from rclpy.node import Node
@@ -8,19 +10,20 @@ from sensor_msgs.msg import NavSatFix, NavSatStatus
 from std_msgs.msg import Float32MultiArray, UInt8
 from tf2_msgs.msg import TFMessage
 
-import math
 import time
 from typing import Any
 
 import numpy as np
 from pymavlink import mavutil
 
-from px4_python_sitl.sim_utils import (
+from vehicle.sim_utils import (
     controls_to_u,
     ned_frd_quat_to_enu_flu_quat,
     ned_to_enu_position,
+    parse_vehicle_model,
 )
-from px4_python_sitl.vehicle.world import World
+from vehicle.vehicle_catalog import list_vehicle_models
+from vehicle.world import World
 
 
 MAVLINK_MSG_ID_HIL_STATE_QUATERNION = 115
@@ -55,6 +58,7 @@ class Px4LockstepRos2Node(Node):
         self.mavlink_bind_host = str(self.get_parameter("mavlink_bind_host").value)
         self.mavlink_bind_port = int(self.get_parameter("mavlink_bind_port").value)
         self.vehicle_model = str(self.get_parameter("vehicle_model").value).strip().lower()
+        self.vehicle_model = parse_vehicle_model(self.vehicle_model, list_vehicle_models())
         self.rate_hz = int(self.get_parameter("rate_hz").value)
         self.ts04_pitch90_start = bool(self.get_parameter("ts04_pitch90_start").value)
         self.gps_origin = {
@@ -97,21 +101,24 @@ class Px4LockstepRos2Node(Node):
             self.conn.source_system = px4_sysid
             self.conn.mav.srcSystem = px4_sysid
 
-        y0 = np.zeros(13)
-        y0[0:3] = np.array([0.0, 0.0, -3.0])
-        if self.vehicle_model == "ts04" and self.ts04_pitch90_start:
-            y0[3:7] = np.array([math.sqrt(0.5), 0.0, math.sqrt(0.5), 0.0])
-        else:
-            y0[3] = 1.0
-
         self.world = World(
             vehicle_model=self.vehicle_model,
-            y0=y0,
             u0=np.zeros(4),
             wind0=np.zeros(6),
             ts04_pitch90_start=self.ts04_pitch90_start,
         )
         self.world.P.gps_origin = dict(self.gps_origin)
+        self.catapult_enabled = bool(getattr(self.world, "rail_launch_enabled", False))
+        try:
+            self.catapult_launch_countdown_s = max(0.0, float(os.getenv("SIM_CATAPULT_LAUNCH_COUNTDOWN_S", "3.0")))
+        except ValueError as exc:
+            raise ValueError("SIM_CATAPULT_LAUNCH_COUNTDOWN_S must be a float") from exc
+        self.catapult_launch_countdown_us = int(self.catapult_launch_countdown_s * 1e6)
+        self.catapult_countdown_active = False
+        self.catapult_release_time_us: int | None = None
+        self.next_countdown_announce_us = 0
+        if self.catapult_enabled:
+            self.get_logger().info(f"Catapult launch enabled with countdown {self.catapult_launch_countdown_s:.1f} s")
 
         self.tf_pub = self.create_publisher(TFMessage, self.tf_topic, 10)
         self.gps_fix_pub = self.create_publisher(NavSatFix, self.gps_fix_topic, 10)
@@ -157,7 +164,17 @@ class Px4LockstepRos2Node(Node):
                         self.next_hil_state_time_us = self.sim_time_us
 
         if self.armed and (not self.was_armed):
-            self.get_logger().info("ARM transition: dynamics enabled")
+            if self.catapult_enabled and self.catapult_launch_countdown_us > 0:
+                self.catapult_countdown_active = True
+                self.catapult_release_time_us = self.sim_time_us + self.catapult_launch_countdown_us
+                self.next_countdown_announce_us = self.sim_time_us
+                self.get_logger().info(f"ARM transition: catapult launch in {self.catapult_launch_countdown_s:.1f} s")
+            else:
+                self.get_logger().info("ARM transition: dynamics enabled")
+        if (not self.armed) and self.was_armed and self.catapult_countdown_active:
+            self.catapult_countdown_active = False
+            self.catapult_release_time_us = None
+            self.get_logger().info("Catapult countdown cancelled (disarmed)")
         self.was_armed = self.armed
 
         self.world.set_controls(
@@ -171,7 +188,22 @@ class Px4LockstepRos2Node(Node):
         io_run_only = (self.slow_down_counter % CHECK_FACTOR) != 0
         now_ms = self.sim_time_us // 1000
         needs_to_pause = (self.last_time_ran_ms == now_ms) or io_run_only
-        world_out = self.world.update(self.sim_time_us, needs_to_pause, freeze_dynamics=(not self.ever_armed))
+        if self.catapult_countdown_active and self.catapult_release_time_us is not None:
+            if self.sim_time_us >= self.catapult_release_time_us:
+                self.catapult_countdown_active = False
+                self.catapult_release_time_us = None
+                self.get_logger().info("Catapult launch release")
+            elif self.sim_time_us >= self.next_countdown_announce_us:
+                remaining_s = max(0.0, (self.catapult_release_time_us - self.sim_time_us) / 1e6)
+                self.get_logger().info(f"Catapult countdown: {remaining_s:.1f} s")
+                self.next_countdown_announce_us = self.sim_time_us + 1_000_000
+
+        freeze_for_countdown = self.catapult_enabled and self.catapult_countdown_active
+        world_out = self.world.update(
+            self.sim_time_us,
+            needs_to_pause,
+            freeze_dynamics=((not self.ever_armed) or freeze_for_countdown),
+        )
 
         should_publish = world_out is not None and (not needs_to_pause)
         if should_publish:
@@ -198,6 +230,10 @@ class Px4LockstepRos2Node(Node):
         gyro = np.asarray(z["gyroscope"], dtype=float)
         mag = np.asarray(z["magnetometer"], dtype=float)
         baro = z["barometer"]
+        fields_updated = 8191
+        has_airspeed_sensor = bool(getattr(self.world.P, "has_airspeed_sensor", False))
+        if not has_airspeed_sensor:
+            fields_updated &= ~int(mavutil.mavlink.MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE)
 
         self.conn.mav.hil_sensor_send(
             int(self.sim_time_us),
@@ -214,7 +250,7 @@ class Px4LockstepRos2Node(Node):
             float(baro["dynamic"]) * 0.01,
             float(baro.get("pressure_altitude_m", gps[2])),
             15.0,
-            8191,
+            int(fields_updated),
         )
 
         if self.hil_state_interval_us > 0 and self.sim_time_us >= self.next_hil_state_time_us:

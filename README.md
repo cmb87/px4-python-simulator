@@ -65,31 +65,60 @@ vehicle.World -> main.py -> GroundTruth WS -> ground_truth_ws_visualizer.py
 
 ## Vehicle Models
 
-Vehicle-specific setup lives in `src/vehicle/model/`.
+Vehicle-specific setup lives in `src/vehicle/vehicles/<name>/`, and model selection lives in `src/vehicle/vehicle_catalog.py`.
 
-- `x8`: fixed-wing model using `forces/wing_x8.py`
-- `iris`: quadcopter model using:
-  - `forces/iris_quad.py` (4x simple motor model)
-  - `forces/passive_sphere_aero.py` (passive drag)
+Default models:
 
-`vehicle/world.py` only selects the active model and runs dynamics/sensors.
+- `x8`
+- `iris`
+- `ts04`
+
+`vehicle/world.py` is model-agnostic: it resolves parameters, force models, and default initial state via the vehicle catalog.
+
+### Add a New Vehicle
+
+1. Add a vehicle folder under `src/vehicle/vehicles/` (for example `src/vehicle/vehicles/my_uav/`) with:
+   - `parameters.py`
+   - `forces.py`
+   - `initial_state.py`
+   - `definition.py` exposing `make_parameters()`, `make_force_models(parameters)`, and `make_initial_state(config)`
+   - optionally reuse shared force blocks from `src/vehicle/vehicles/common_forces/`
+2. Register it explicitly in `src/vehicle/vehicle_catalog.py` by adding one entry to `VEHICLES`.
+3. Run tests (`pytest src/test/test_vehicle_catalog.py`) to verify catalog wiring and one-step world execution.
+
+### Optional Rail Launch (All Vehicles)
+
+Rail launch can be enabled for any vehicle model. While on rail, the simulator constrains motion to rail translation and keeps attitude aligned to the rail. After rail distance reaches rail length, dynamics automatically switch to free 6DOF.
+
+Per-vehicle rail parameters live in each vehicle's `parameters.py`:
+
+- `rail_launch_enabled` (default `False`)
+- `rail_dir_ned` (default `[0.7071, 0.0, -0.7071]`)
+- `rail_start_ned` (default `[0.0, 0.0, 0.0]`)
+- `rail_length` (default `2.0`)
+- `rail_pull_max` (default `1.0`)
+
+Runtime launch delay after arm is controlled by env var:
+
+- `SIM_CATAPULT_LAUNCH_COUNTDOWN_S` (default `3.0`)
+- Applies only when `rail_launch_enabled=True`.
 
 ### How Models Integrate Into Architecture
 
 At runtime, model integration happens in this order:
 
 1. `src/main.py` reads `SIM_VEHICLE_MODEL` and creates `World(vehicle_model=...)`.
-2. `vehicle/world.py` resolves model-specific pieces:
-   - parameters via `_build_parameters(...)`
-   - force model list via `_build_force_models(...)`
+2. `vehicle/world.py` resolves model-specific pieces from the catalog:
+   - parameters via the model spec
+   - force model list via the model spec
+   - default initial state via the model spec
 3. For each simulation step, `World.update(...)`:
-   - passes `y`, `u`, `wind`, `P` into each force model
-   - sums all returned 6D wrenches into `tau`
+   - evaluates and sums all force-model outputs into `tau`
    - runs `Dynamics6DOF` with `tau` and `P`
    - runs `SensorSuite` from updated state and state derivative
 4. `src/main.py` publishes sensor outputs to PX4 via MAVLink HIL messages.
 
-This keeps vehicle specifics inside `vehicle/model/*` and `vehicle/forces/*`, while `vehicle/world.py` stays vehicle-agnostic.
+This keeps vehicle specifics inside `vehicle/vehicles/<name>/*`, while `vehicle/world.py` stays vehicle-agnostic.
 
 ### Select Model
 
@@ -98,7 +127,8 @@ Use `SIM_VEHICLE_MODEL`:
 - `SIM_VEHICLE_MODEL=x8` (default)
 - `SIM_VEHICLE_MODEL=iris`
 - `SIM_VEHICLE_MODEL=ts04`
-- `SIM_GPS_ORIGIN_LAT` / `SIM_GPS_ORIGIN_LON` / `SIM_GPS_ORIGIN_ALT` set GPS origin for all models.
+- `SIM_GPS_LAT` / `SIM_GPS_LON` / `SIM_GPS_ALT` set GPS origin for all models.
+  Legacy names `SIM_GPS_ORIGIN_LAT` / `SIM_GPS_ORIGIN_LON` / `SIM_GPS_ORIGIN_ALT` are still accepted.
   Defaults: `47.397742`, `8.545594`, `470.0`.
 
 TS04 optional startup attitude toggle:
@@ -240,7 +270,7 @@ flowchart TD
   Out[Publish transformed slave sensors\nto slave PX4 instance]
 ```
 
-Symbols below match `src/transfer_alignment.py` (`transform_master_to_slave_state(...)`):
+Symbols below match `src/vehicle/transfer_alignment.py` (`transform_master_to_slave_state(...)`):
 
 - `q_m`: master attitude quaternion (wxyz), body-to-world matrix `R_mw = Mfg(q_m)^T`
 - `q_sm`: fixed slave-from-master body rotation from `SIM_TRANSFER_REL_EULER_DEG`
