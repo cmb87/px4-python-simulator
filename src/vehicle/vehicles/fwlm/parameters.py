@@ -12,9 +12,9 @@ class FWLMParameters:
         self.rho = 1.225
         x8_mass = 4.364
         inertia_scale = self.mass / x8_mass
-        self.Jx = 0.01 * inertia_scale
-        self.Jy = 0.01 * inertia_scale
-        self.Jz = 0.01 * inertia_scale
+        self.Jx = 1.01 * inertia_scale
+        self.Jy = 1.01 * inertia_scale
+        self.Jz = 1.01 * inertia_scale
         self.Jxz = 0.0*(0.9343 * 0.001) * inertia_scale
 
         self.I_cg = np.array(
@@ -35,7 +35,7 @@ class FWLMParameters:
         self.aero_c_ref = 0.07
         self.aero_oob_mode = "clamp"
         self.aero_force_sign = (-1.0, 1.0, -1.0)
-        self.aero_moment_sign = (1.0, 1.0, 1.0)
+        self.aero_moment_sign = (-1.0, 1.0, -1.0) # please check
         self.debug_alpha_beta = False
         self.debug_alpha_beta_stride = 1
 

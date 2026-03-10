@@ -6,7 +6,7 @@ from vehicle_animation_common import animate_vehicle, plot_sensor_suite_overview
 
 
 def run_fwlm_catapult_sim(total_time_s: float = 10.0, dt_s: float = 0.01):
-    controls = np.array([1.0, -0.1, -0.1, 0.0], dtype=float)
+    controls = np.array([1.0, 0.1, -0.1, 0.0], dtype=float)
     return run_vehicle_sim(
         "fwlm",
         controls=controls,

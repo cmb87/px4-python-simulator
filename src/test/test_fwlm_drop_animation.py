@@ -17,7 +17,7 @@ def build_drop_initial_state():
 def run_fwlm_drop_sim(total_time_s: float = 20.0, dt_s: float = 0.01, stop_on_ground_contact: bool = True):
     y0 = build_drop_initial_state()
     u0 = np.zeros(4, dtype=float)
-    u0 =  np.array([0.0, 0.1, 0.1, 0.0], dtype=float)
+    u0 =  np.array([0.0, -0.1, 0.1, 0.0], dtype=float)
     wind0 = np.zeros(6, dtype=float)
     world = World(vehicle_model="fwlm", y0=y0, u0=u0, wind0=wind0)
     world.P.debug_alpha_beta = True
