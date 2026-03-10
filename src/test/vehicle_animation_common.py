@@ -29,8 +29,15 @@ def run_vehicle_sim(
     controls: np.ndarray,
     total_time_s: float = 20.0,
     dt_s: float = 0.01,
+    stop_on_ground_contact: bool = True,
+    debug_alpha_beta: bool = False,
+    debug_alpha_beta_stride: int = 10,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, np.ndarray]]:
     world = World(vehicle_model=vehicle_model, u0=np.zeros(4), wind0=np.zeros(6))
+    if hasattr(world.P, "debug_alpha_beta"):
+        world.P.debug_alpha_beta = bool(debug_alpha_beta)
+    if hasattr(world.P, "debug_alpha_beta_stride"):
+        world.P.debug_alpha_beta_stride = int(max(debug_alpha_beta_stride, 1))
     configure_catapult(world)
 
     controls = np.asarray(controls, dtype=float)
@@ -50,9 +57,29 @@ def run_vehicle_sim(
     baro_static_hist = np.zeros(steps)
     baro_dynamic_hist = np.zeros(steps)
     gps_updated_hist = np.zeros(steps, dtype=bool)
+    alpha_deg_hist = np.zeros(steps)
+    beta_deg_hist = np.zeros(steps)
+
+    ground_latched = False
+    was_airborne = False
 
     for k in range(steps):
         t_us = (k + 1) * dt_us
+        if ground_latched and k > 0:
+            y_hist[k] = y_hist[k - 1]
+            left_rail_hist[k] = left_rail_hist[k - 1]
+            accel_hist[k] = accel_hist[k - 1]
+            gyro_hist[k] = gyro_hist[k - 1]
+            mag_hist[k] = mag_hist[k - 1]
+            gps_hist[k] = gps_hist[k - 1]
+            baro_static_hist[k] = baro_static_hist[k - 1]
+            baro_dynamic_hist[k] = baro_dynamic_hist[k - 1]
+            gps_updated_hist[k] = gps_updated_hist[k - 1]
+            alpha_deg_hist[k] = alpha_deg_hist[k - 1]
+            beta_deg_hist[k] = beta_deg_hist[k - 1]
+            t_hist[k] = t_us / 1e6
+            continue
+
         world.set_controls(controls)
         out = world.update(t_us, paused=False, freeze_dynamics=False)
         y_hist[k] = out["y"]
@@ -67,6 +94,20 @@ def run_vehicle_sim(
         baro_dynamic_hist[k] = float(sensors["barometer"]["dynamic"])
         gps_updated_hist[k] = bool(sensors.get("gps_updated", False))
 
+        vel_body = np.asarray(out["y"][7:10], dtype=float)
+        wind_body = np.asarray(world.wind[:3], dtype=float)
+        vel_rel = vel_body - wind_body
+        u_r, v_r, w_r = vel_rel
+        v_air = max(float(np.linalg.norm(vel_rel)), 1.0e-5)
+        alpha_deg_hist[k] = float(np.rad2deg(np.arctan2(w_r, u_r)))
+        beta_deg_hist[k] = float(np.rad2deg(np.arcsin(np.clip(v_r / v_air, -1.0, 1.0))))
+
+        if float(out["y"][2]) < 0.0:
+            was_airborne = True
+
+        if stop_on_ground_contact and was_airborne and float(out["y"][2]) >= 0.0:
+            ground_latched = True
+
     sensor_hist = {
         "accelerometer": accel_hist,
         "gyroscope": gyro_hist,
@@ -75,6 +116,8 @@ def run_vehicle_sim(
         "baro_static": baro_static_hist,
         "baro_dynamic": baro_dynamic_hist,
         "gps_updated": gps_updated_hist,
+        "alpha_deg": alpha_deg_hist,
+        "beta_deg": beta_deg_hist,
     }
     return t_hist, y_hist, left_rail_hist, sensor_hist
 
@@ -108,6 +151,10 @@ def animate_vehicle(
     pos_ned = y_hist[:, 0:3]
     quat = y_hist[:, 3:7]
     speed = np.linalg.norm(y_hist[:, 7:10], axis=1)
+    vel_body = np.asarray(y_hist[:, 7:10], dtype=float)
+    va = np.maximum(np.linalg.norm(vel_body, axis=1), 1.0e-5)
+    alpha_deg = np.rad2deg(np.arctan2(vel_body[:, 2], vel_body[:, 0]))
+    beta_deg = np.rad2deg(np.arcsin(np.clip(vel_body[:, 1] / va, -1.0, 1.0)))
 
     north = pos_ned[:, 0]
     east = pos_ned[:, 1]
@@ -175,7 +222,9 @@ def animate_vehicle(
         left_rail = False if left_rail_hist is None else bool(left_rail_hist[frame_idx])
         ax.set_title(
             f"{title_prefix} | t = {t_hist[frame_idx]:.1f} s | "
-            f"V = {speed[frame_idx]:.2f} m/s | left_rail={left_rail}"
+            f"V = {speed[frame_idx]:.2f} m/s | "
+            f"alpha = {alpha_deg[frame_idx]:.1f} deg | beta = {beta_deg[frame_idx]:.1f} deg | "
+            f"left_rail={left_rail}"
         )
         return list(body_lines.values()) + [trajectory_line]
 
@@ -190,8 +239,10 @@ def plot_sensor_suite_overview(t_hist: np.ndarray, sensor_hist: dict[str, np.nda
     gyro = sensor_hist["gyroscope"]
     baro_dynamic = sensor_hist["baro_dynamic"]
     gps_updated = sensor_hist["gps_updated"].astype(float)
+    alpha_deg = sensor_hist.get("alpha_deg", np.zeros_like(t_hist))
+    beta_deg = sensor_hist.get("beta_deg", np.zeros_like(t_hist))
 
-    fig, axs = plt.subplots(4, 1, figsize=(9, 8), sharex=True)
+    fig, axs = plt.subplots(5, 1, figsize=(9, 10), sharex=True)
 
     axs[0].plot(t_hist, acc[:, 0], label="ax")
     axs[0].plot(t_hist, acc[:, 1], label="ay")
@@ -214,10 +265,16 @@ def plot_sensor_suite_overview(t_hist: np.ndarray, sensor_hist: dict[str, np.nda
 
     axs[3].plot(t_hist, gps_updated, label="gps_updated")
     axs[3].set_ylabel("GPS upd")
-    axs[3].set_xlabel("Time [s]")
     axs[3].set_ylim(-0.1, 1.1)
     axs[3].legend(loc="upper right")
     axs[3].grid(True)
+
+    axs[4].plot(t_hist, alpha_deg, label="alpha")
+    axs[4].plot(t_hist, beta_deg, label="beta")
+    axs[4].set_ylabel("Angles [deg]")
+    axs[4].set_xlabel("Time [s]")
+    axs[4].legend(loc="upper right")
+    axs[4].grid(True)
 
     fig.suptitle(f"{title_prefix} Sensor Suite")
     plt.tight_layout()
