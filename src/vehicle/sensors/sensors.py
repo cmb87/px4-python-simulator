@@ -1,18 +1,11 @@
 import numpy as np
-from quaternion import Quaternion
 
-try:
-    from sensors.magnetometer import MagnetometerSim
-    from sensors.imu import ADIS16448IMU
-    from sensors.gps import GpsSensor
-    from sensors.barometer import BarometerSensor
-except ImportError:
-    from magnetometer import MagnetometerSim
-    from imu import ADIS16448IMU
-    from gps import GpsSensor
-    from barometer import BarometerSensor
-
-from base_component import SimComponentBase
+from ..base_component import SimComponentBase
+from ..quaternion import Quaternion
+from .barometer import BarometerSensor
+from .gps import GpsSensor
+from .imu import ADIS16448IMU
+from .magnetometer import MagnetometerSim
 
 
 class SensorSuite(SimComponentBase):
@@ -35,12 +28,16 @@ class SensorSuite(SimComponentBase):
         self.baro.set_drift_rate(0.05)
         self.baro.set_noise(True)
 
+        self._diff_pressure_initialized = False
+        self._diff_pressure_pa = 0.0
+
     def update(self, t_us, paused):
         if paused:
             return self.last_output
 
         y = self._inputs.get("y")
         ydot = self._inputs.get("ydot")
+        wind = self._inputs.get("wind")
         P = self._inputs.get("P")
 
         if y is None or ydot is None or P is None:
@@ -55,10 +52,14 @@ class SensorSuite(SimComponentBase):
             alt_m = float(gps_origin.get("alt", 470.0))
             self.gps.set_home(lat_deg, lon_deg, alt_m)
             self._sensor_params_initialized = True
+            self._diff_pressure_initialized = False
+            self._diff_pressure_pa = 0.0
 
         pos = y[0:3]
         quat = y[3:7] / np.linalg.norm(y[3:7])
         vel = y[7:10]
+        wind_vec = np.zeros(6) if wind is None else np.asarray(wind, dtype=float)
+        wind_body = wind_vec[:3]
         omega = y[10:13]
         accel_body_rate = ydot[7:10]
 
@@ -83,11 +84,41 @@ class SensorSuite(SimComponentBase):
         self.baro.set_inputs(z_position_local=-pos[2])
         baro_reading = self.baro.update(t_us, paused=False)
         static_pressure = baro_reading["absolute_pressure_hpa"] * 100.0
-        dynamic_pressure = 0.5 * P.rho * np.linalg.norm(vel_ned) ** 2
+
+        vel_air_body = np.asarray(vel, dtype=float) - np.asarray(wind_body, dtype=float)
+
+        pitot_axis_body = np.asarray(getattr(P, "pitot_axis_body", np.array([1.0, 0.0, 0.0])), dtype=float).reshape(3)
+        pitot_axis_norm = float(np.linalg.norm(pitot_axis_body))
+        if pitot_axis_norm <= 1e-9:
+            pitot_axis_body = np.array([1.0, 0.0, 0.0], dtype=float)
+        else:
+            pitot_axis_body = pitot_axis_body / pitot_axis_norm
+
+        pitot_speed = float(np.dot(vel_air_body, pitot_axis_body))
+        dynamic_pressure_ideal = 0.5 * float(P.rho) * max(pitot_speed, 0.0) ** 2
+
+        dt = self._compute_dt_s(t_us)
+        if dt <= 0.0:
+            dt = 1.0 / 250.0
+        diff_pressure_lpf_tau_s = max(float(getattr(P, "diff_pressure_lpf_tau_s", 0.08)), 1e-6)
+        alpha_dp = dt / (diff_pressure_lpf_tau_s + dt)
+
+        if not self._diff_pressure_initialized:
+            self._diff_pressure_pa = dynamic_pressure_ideal
+            self._diff_pressure_initialized = True
+        else:
+            self._diff_pressure_pa = self._diff_pressure_pa + alpha_dp * (dynamic_pressure_ideal - self._diff_pressure_pa)
+
+        diff_pressure_noise_std = float(getattr(P, "diff_pressure_noise_std", P.baro_noise_std))
+        dynamic_pressure_meas = self._diff_pressure_pa + np.random.normal(0.0, diff_pressure_noise_std)
+        dynamic_pressure_meas = max(float(dynamic_pressure_meas), 0.0)
+        rho_air = max(float(P.rho), 1e-6)
+        airspeed_ias_mps = float(np.sqrt(2.0 * dynamic_pressure_meas / rho_air))
+        airspeed_tas_mps = float(np.linalg.norm(vel_air_body))
         baro_meas = {
             "staticAbsolute": static_pressure,
             "static": static_pressure,
-            "dynamic": dynamic_pressure + np.random.normal(0, P.baro_noise_std),
+            "dynamic": dynamic_pressure_meas,
             "pressure_altitude_m": float(baro_reading["pressure_altitude_m"]),
         }
 
@@ -108,6 +139,8 @@ class SensorSuite(SimComponentBase):
             "gyroscope": gyro_meas,
             "magnetometer": mag_meas,
             "barometer": baro_meas,
+            "airspeed_ias_mps": airspeed_ias_mps,
+            "airspeed_tas_mps": airspeed_tas_mps,
             "gps": gps_meas,
             "gps_updated": self.gps.is_updated(),
             "euler": euler,

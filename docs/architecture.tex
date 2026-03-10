@@ -103,7 +103,7 @@ $\nu_\cdot,\xi_\cdot$ & GPS position and velocity noise terms & zero mean, confi
 \end{longtable}
 \normalsize
 
-\section{6DOF Kernel}
+\section{Simulation Kernel}
 \subsection{Short Introduction}
 The rigid-body kernel in \texttt{src/vehicle/dynamics.py} evolves the 13-state vector under the summed body-frame force and moment input and gravity.
 Figure \ref{fig:ned_frd} introduces the coordinate conventions used by the equations: world frame NED (North-East-Down) and body frame FRD (Forward-Right-Down).
@@ -115,7 +115,16 @@ Figure \ref{fig:ned_frd} introduces the coordinate conventions used by the equat
     \label{fig:ned_frd}
 \end{figure}
 
-\subsection{Equations}
+\subsection{6DOF Model}
+\subsubsection{Assumptions}
+\begin{itemize}
+    \item Constant mass and inertia over one simulation step.
+    \item Forces and moments are fully summed in body frame before the dynamics call.
+    \item Ground-contact clamp at $z_{ned}=0$: if $p_d\ge0$, then $p_d\leftarrow0$, and downward components are clamped by $v_{ned,D}\leftarrow\min(v_{ned,D},0)$ and $a_{ned,D}\leftarrow\min(a_{ned,D},0)$ before reprojection to body-frame derivatives.
+    \item Explicit fixed-step lockstep integration.
+\end{itemize}
+
+\subsubsection{Equations}
 State and kinematics:
 \begin{align}
 y &= [p_n,p_e,p_d,q_w,q_x,q_y,q_z,u,v,w,p,q,r]^T, \\
@@ -160,13 +169,96 @@ a_{ned,D} &\leftarrow \min(a_{ned,D},0).
 \end{align}
 The clamped NED velocity and acceleration are reprojected to body-frame derivatives used by the integrator.
 
-\subsection{Assumptions}
-\begin{itemize}
-    \item Constant mass and inertia over one simulation step.
-    \item Forces and moments are fully summed in body frame before the dynamics call.
-    \item Ground-contact clamp at $z_{ned}=0$: if $p_d\ge0$, then $p_d\leftarrow0$, and downward components are clamped by $v_{ned,D}\leftarrow\min(v_{ned,D},0)$ and $a_{ned,D}\leftarrow\min(a_{ned,D},0)$ before reprojection to body-frame derivatives.
-    \item Explicit fixed-step lockstep integration.
-\end{itemize}
+\subsubsection{Catapult-Constrained Start Mode}
+When catapult start is enabled, \texttt{World} temporarily replaces free 6DOF with a rail-constrained kernel from \texttt{src/vehicle/dynamics.py} (function \texttt{rail\_dynamics}), while catapult pull force is computed in \texttt{src/vehicle/vehicles/common\_forces/catapult\_rail.py}. Let $\hat r_{rail}^{ned}$ be the unit rail direction and $p_{rail,0}^{ned}$ the rail start point.
+
+Rail progress and switch condition:
+\begin{align}
+s &= (p^{ned} - p_{rail,0}^{ned})^T \hat r_{rail}^{ned}, \\
+\text{if } s &\ge L_{rail} \Rightarrow \text{switch to free 6DOF.}
+\end{align}
+
+Launch is additionally gated by an arm-triggered countdown in the runtime loops (CLI and ROS2):
+\begin{align}
+t_{release} &= t_{arm} + T_{countdown}, \\
+\text{dynamics frozen while } t &< t_{release}.
+\end{align}
+The countdown duration is configured by environment variable
+\texttt{SIM\_CATAPULT\_LAUNCH\_COUNTDOWN\_S} (default $3.0$ s).
+
+During constrained mode, translational motion is projected onto the rail:
+\begin{align}
+\dot p^{ned} &= (v^{ned}\cdot \hat r_{rail}^{ned})\,\hat r_{rail}^{ned}, \\
+f_{rail} &= \max\left(0,\,m\,g\,k_{pull}(L_{rail}-s)\right), \\
+f_b^{rail} &= R_{wb}(q)\left(f_{rail}\,\hat r_{rail}^{ned}\right), \\
+a_b &= \left(\frac{f_b + f_b^{rail} + R_{wb}(q)[0,0,mg]^T}{m}\cdot \hat r_{rail}^{b}\right)\hat r_{rail}^{b}, \\
+\dot q &= 0, \qquad \dot\omega_b = 0.
+\end{align}
+Here $k_{pull}=\texttt{rail\_pull\_max}$ and $\hat r_{rail}^{b}=R_{wb}(q)\hat r_{rail}^{ned}$. Attitude is held aligned to the rail until switch.
+So far, the catapult pull model is assumed linear with rail distance ($\propto (L_{rail}-s)$) and clamped to non-negative force.
+
+\subsection{Program Architecture}
+The 6DOF model above defines the rigid-body state propagation used by the simulator core. Vehicle-specific force and moment generation is documented in the \textit{Vehicle Models} chapter, where each vehicle contributes its own force-model set through the catalog.
+
+Sensor synthesis is handled by \texttt{SensorSuite} and documented in the \textit{Sensor Models} chapter, including IMU, magnetometer, barometer, GPS, and differential-pressure/airspeed-related channels.
+
+Communication of simulated sensor and state outputs to PX4 (and integration hooks for external tools) is documented in the \textit{MAVLink and External Communication} chapter.
+
+\begin{verbatim}
+                          +------------------------------+
+                          |            PX4 SITL          |
+                          |   EKF + Controllers + Mixer  |
+                          +---------------+--------------+
+                                          |
+                                HIL_ACTUATOR_CONTROLS
+                                          |
+                                          v
++-------------------------------------------------------------------------+
+|                    px4-python-sitl (src/main.py)                        |
+| lockstep scheduler | role: standalone/master/slave | MAVLink endpoint   |
++--------------------+-------------------------------+---------------------+
+                     |
+                     | controls_to_u()
+                     v
+            +-------------------+
+            | vehicle.World     |
+            | state y, ydot,tau |
+            +---------+---------+
+                      |
+        +-------------+--------------+
+        |                            |
+        v                            v
++---------------+          +----------------------+
+| Force Models  |          | Dynamics6DOF Kernel  |
+| (by vehicle)  |          | y, ydot = f(y,tau,P) |
++-------+-------+          +----------+-----------+
+        |                             |
+        +------------- tau -----------+
+                                      |
+                     +----------------+------------------+
+                     |                                   |
+                     v                                   v
+          +----------------------+            +------------------+
+          | GroundTruth WS JSON  |<-----------| SensorSuite      |
+          | websockerPublisher   |            | IMU MAG BARO GPS |
+          +----------+-----------+            +--------+---------+
+                     ^                                   |
+                     |                                   v
+                     |                    +--------------------------------------+
+                     +--------------------| HIL_SENSOR / HIL_GPS / HIL_STATE... |
+                                          +--------------------------------------+
+                                                          |
+                                                          v
+                                                        PX4 SITL
+
+                     +----------------------+
+                     | Transfer Alignment   |
+                     | uses y, ydot (truth) |
+                     +----------------------+
+                             ^
+                             |
+                     (from Dynamics6DOF)
+\end{verbatim}
 
 \section{Sensor Models}
 Sensor synthesis is implemented in \texttt{src/vehicle/sensors/sensors.py}. Noise is enabled by default for IMU, magnetometer, GPS, and barometer.
@@ -222,7 +314,7 @@ $\omega_{max}$ & gyroscope range & $\pm2000$ & deg/s \\
 \end{tabular}
 \end{center}
 
-\paragraph{Flow chart (ASCII)}
+\paragraph{Flow chart}
 {\footnotesize
 \begin{verbatim}
 [Input] y, ydot, q
@@ -318,7 +410,7 @@ $m_{ned}$ & runtime field input & $[0.21523,0.01,0.43]$ (Iris) & gauss \\
 \end{tabular}
 \end{center}
 
-\paragraph{Flow chart (ASCII)}
+\paragraph{Flow chart}
 {\footnotesize
 \begin{verbatim}
 [Input] q, m_ned
@@ -364,9 +456,34 @@ P_{meas} &= P_{ideal} + n_P + d_P, \quad d_P(k)=d_P(k-1)+r_{drift}\Delta t, \\
 P_{hPa} &= 0.01P_{meas}, \\
 \rho_{baro} &= \rho_0\left(\frac{T}{T_0}\right)^{4.256}, \\
 h_{press} &= h_{amsl} - \frac{n_P+d_P}{g\rho_{baro}}, \\
-q_{dyn} &= \frac{1}{2}\rho_{air}\|v_{ned}\|^2 + n_q.
+q_{dyn} &= q_{dyn,lp} + n_{dp}.
 \end{align}
 These channels provide static pressure, pressure altitude, and dynamic pressure used in \texttt{HIL\_SENSOR}.
+
+\subsubsection*{Airspeed Sensor Option and Differential Pressure Channel}
+Each vehicle parameter class can declare \texttt{has\_airspeed\_sensor}. This option controls the \texttt{HIL\_SENSOR.fields\_updated} differential-pressure capability bit in MAVLink:
+\begin{itemize}
+    \item if \texttt{has\_airspeed\_sensor=True}, differential pressure is advertised,
+    \item if \texttt{has\_airspeed\_sensor=False}, \texttt{MAV\_SYS\_STATUS\_SENSOR\_DIFFERENTIAL\_PRESSURE} (bit value 16) is cleared.
+\end{itemize}
+
+The differential-pressure measurement used by the simulator is modeled as
+\begin{align}
+v_{air,b} &= v_b - w_b, \\
+u_{pitot} &= v_{air,b} \cdot \hat e_{pitot,b}, \\
+q_{dyn,ideal} &= \frac{1}{2}\rho_{air}\,\max(u_{pitot}, 0)^2, \\
+q_{dyn,lp}(k) &= q_{dyn,lp}(k-1) + \alpha_{dp}\big(q_{dyn,ideal}(k)-q_{dyn,lp}(k-1)\big), \\
+\alpha_{dp} &= \frac{\Delta t}{\tau_{dp}+\Delta t}, \\
+q_{dyn,meas} &= q_{dyn,lp} + n_{dp}, \\
+n_{dp} &\sim \mathcal{N}(0,\sigma_{dp}^2).
+\end{align}
+In the current default parameterization, each vehicle sets
+\begin{equation}
+\sigma_{dp} = 0.002\ \text{Pa}
+\end{equation}
+via \texttt{diff\_pressure\_noise\_std}. The default pitot axis is
+\texttt{pitot\_axis\_body=[1,0,0]} and the default LPF constant is
+\texttt{diff\_pressure\_lpf\_tau\_s=0.08}.
 
 \paragraph{Characteristic values (current parameterization)}
 All symbols in the table are used by the barometer equations, with $f_{baro}=1/\Delta t$ and $n_P\sim\mathcal{N}(0,\sigma_P^2)$.
@@ -377,6 +494,7 @@ Variable & Description & Value & Unit \\
 \midrule
 $f_{baro}$ & update rate & $20$ & Hz \\
 $\sigma_P$ & pressure noise std. dev. & $1.0$ & Pa \\
+$\sigma_{dp}$ & differential pressure noise std. dev. & vehicle parameter (default $0.002$) & Pa \\
 $r_{drift}$ & pressure drift rate & $0.05$ & Pa/s \\
 $P_0$ & sea-level pressure & $101325$ & Pa \\
 $T_0$ & sea-level temperature & $288.15$ & K \\
@@ -387,7 +505,7 @@ $h_0$ & home altitude default & $488$ & m \\
 \end{tabular}
 \end{center}
 
-\paragraph{Flow chart (ASCII)}
+\paragraph{Flow chart}
 {\footnotesize
 \begin{verbatim}
 [Input] p_d, v_ned
@@ -466,7 +584,7 @@ $(\varphi_0,\lambda_0,h_0)$ & home origin defaults & $(47.397742^\circ,8.545594^
 \end{tabular}
 \end{center}
 
-\paragraph{Flow chart (ASCII)}
+\paragraph{Flow chart}
 {\footnotesize
 \begin{verbatim}
 [Input] p_ned, v_ned, t_us
@@ -495,7 +613,7 @@ Gate:    if t_us < next_update_us, return last sample and gps_updated=false.
 \end{itemize}
 
 \section{Vehicle Models}
-Vehicle parameters are declared in \texttt{src/vehicle/model/*.py}.
+Vehicle parameters are declared per vehicle in \texttt{src/vehicle/vehicles/*/parameters.py}.
 
 \subsection{Iris (Multicopter)}
 \texttt{IrisParameters} defines mass, inertia, motor, and passive drag terms. The currently used stable defaults are:
@@ -507,8 +625,8 @@ Vehicle parameters are declared in \texttt{src/vehicle/model/*.py}.
 \subsubsection*{Force and Moment Models}
 The Iris model uses two force components:
 \begin{itemize}
-    \item \texttt{IrisQuadForceModel} in \texttt{src/vehicle/forces/mc\_iris.py}: active rotor thrust and reaction torque,
-    \item \texttt{PassiveSphereAeroForceModel} in \texttt{src/vehicle/forces/generic/passive\_sphere\_aero.py}: passive drag.
+    \item \texttt{IrisQuadForceModel} in \texttt{src/vehicle/vehicles/iris/forces.py}: active rotor thrust and reaction torque,
+    \item \texttt{PassiveSphereAeroForceModel} in \texttt{src/vehicle/vehicles/common\_forces/passive\_sphere\_aero.py}: passive drag.
 \end{itemize}
 Rotor moments include arm-induced moments, spin-direction reaction torque, and rotor gyroscopic coupling.
 
@@ -516,7 +634,7 @@ Rotor moments include arm-induced moments, spin-direction reaction torque, and r
 \texttt{X8Parameters} provides aerodynamic derivatives for lift, drag, side force, and moments, plus propulsive and geometric terms.
 
 \subsubsection*{Force and Moment Models}
-The X8 model uses \texttt{WingX8ForceModel} in \texttt{src/vehicle/forces/fw\_x8.py}. It computes aerodynamic forces from angle of attack/sideslip and aerodynamic derivatives, then adds propulsion force and moment.
+The X8 model uses \texttt{WingX8ForceModel} in \texttt{src/vehicle/vehicles/x8/forces.py}. It computes aerodynamic forces from angle of attack/sideslip and aerodynamic derivatives, then adds propulsion force and moment.
 
 \subsection{TS04 (VTOL)}
 \texttt{TS04Parameters} defines tilted rotor geometry and hybrid passive aerodynamics (sphere + wing blend).
@@ -524,12 +642,35 @@ The X8 model uses \texttt{WingX8ForceModel} in \texttt{src/vehicle/forces/fw\_x8
 \subsubsection*{Force and Moment Models}
 The TS04 model uses:
 \begin{itemize}
-    \item \texttt{TS04ForceModel} in \texttt{src/vehicle/forces/vtol\_ts04.py}: active motor thrust, reaction torque, and gyroscopic terms,
-    \item \texttt{TS04BlendedPassiveAeroForceModel} in \texttt{src/vehicle/forces/vtol\_ts04.py}: blend of sphere drag and wing-like passive aerodynamics.
+    \item \texttt{TS04ForceModel} in \texttt{src/vehicle/vehicles/ts04/forces.py}: active motor thrust, reaction torque, and gyroscopic terms,
+    \item \texttt{TS04BlendedPassiveAeroForceModel} in \texttt{src/vehicle/vehicles/ts04/forces.py}: blend of sphere drag and wing-like passive aerodynamics.
 \end{itemize}
 
+\subsection{How to Add a New Vehicle}
+Add a new folder under \texttt{src/vehicle/vehicles/} (for example \texttt{my\_uav/}) with:
+\begin{itemize}
+    \item \texttt{parameters.py}: mass, inertia, sensor terms, and optional rail launch defaults,
+    \item \texttt{forces.py}: vehicle-specific force/moment models,
+    \item \texttt{initial\_state.py}: startup state builder,
+    \item \texttt{definition.py}: \texttt{make\_parameters()}, \texttt{make\_force\_models(parameters)}, \texttt{make\_initial\_state(config)}.
+\end{itemize}
+Then register the vehicle in \texttt{src/vehicle/vehicle\_catalog.py} by adding one \texttt{VEHICLES} entry.
+
+\subsection{Vehicle Options}
+\subsubsection{Catapult Start Parameters (Per Vehicle)}
+Catapult behavior is configured in each vehicle parameter class (not through environment variables). Common fields are:
+\begin{itemize}
+    \item \texttt{rail\_launch\_enabled} (bool),
+    \item \texttt{rail\_dir\_ned} (unit direction in NED),
+    \item \texttt{rail\_start\_ned} (rail origin in NED),
+    \item \texttt{rail\_length} (switch distance),
+    \item \texttt{rail\_pull\_max} (catapult pull scaling),
+    \item \texttt{left\_rail} (runtime state latch).
+\end{itemize}
+If enabled, \texttt{World} starts in constrained rail mode and switches automatically to free 6DOF when rail distance exceeds \texttt{rail\_length}.
+
 \section{Transfer Alignment (External UDP Coupling)}
-\texttt{src/transfer\_alignment.py} provides master/slave UDP transport with sequence-stamped state packets and a rigid-arm state transform from master body to slave body.
+\texttt{src/vehicle/transfer\_alignment.py} provides master/slave UDP transport with sequence-stamped state packets and a rigid-arm state transform from master body to slave body.
 
 \paragraph{Goal}
 The goal of transfer alignment is to initialize and drive the slave vehicle from master truth during the coupled phase, so both platforms stay kinematically consistent before cutover. This provides smooth handover to local slave dynamics without large transients in pose, velocity, or attitude rates.
@@ -544,6 +685,7 @@ In practice, small mounting misalignment can be represented as
 q^{SM} = q_{nom}^{SM} \otimes \delta q, \quad \|\delta\theta\| \ll 1,
 \end{equation}
 where $q_{nom}^{SM}$ is the nominal calibration and $\delta q$ captures residual alignment error.
+Here $\otimes$ denotes quaternion multiplication (Hamilton product), i.e., composition of rotations.
 
 \paragraph{2) Slave pose from master pose}
 \begin{align}
@@ -589,7 +731,7 @@ These are exactly the quantities consumed by \texttt{world.observe\_external\_st
     \item Relative attitude $q^{SM}$ is constant during the coupled phase.
 \end{itemize}
 
-\subsubsection*{Flow chart (ASCII)}
+\subsubsection*{Flow chart}
 {\footnotesize
 \begin{verbatim}
 [Input] master truth packet: {seq, t_us, y^M, ydot^M}
@@ -677,7 +819,7 @@ After cutover (for \texttt{time} or \texttt{mavlink\_cmd}), the slave applies th
     \item \texttt{SYSTEM\_TIME} and periodic heartbeat.
 \end{itemize}
 
-\subsubsection*{Lockstep Message Sequence (ASCII)}
+\subsubsection*{Lockstep Message Sequence}
 {\footnotesize
 \begin{verbatim}
 Init defaults in main.py:
@@ -731,64 +873,6 @@ t_{k+1} = t_k + \Delta t, \quad \Delta t = \frac{1}{\text{RATE\_HZ}}.
 \subsection{Ground Truth WebSocket}
 \texttt{src/visualizer/websockerPublisher.py} streams JSON ground-truth state for external visualizers and analysis tools.
 
-\clearpage
-\section{Program Architecture (ASCII)}
-\begin{verbatim}
-                          +------------------------------+
-                          |            PX4 SITL          |
-                          |   EKF + Controllers + Mixer  |
-                          +---------------+--------------+
-                                          |
-                                HIL_ACTUATOR_CONTROLS
-                                          |
-                                          v
-+-------------------------------------------------------------------------+
-|                    px4-python-sitl (src/main.py)                        |
-| lockstep scheduler | role: standalone/master/slave | MAVLink endpoint   |
-+--------------------+-------------------------------+---------------------+
-                     |
-                     | controls_to_u()
-                     v
-            +-------------------+
-            | vehicle.World     |
-            | state y, ydot,tau |
-            +---------+---------+
-                      |
-        +-------------+--------------+
-        |                            |
-        v                            v
-+---------------+          +----------------------+
-| Force Models  |          | Dynamics6DOF Kernel  |
-| (by vehicle)  |          | y, ydot = f(y,tau,P) |
-+-------+-------+          +----------+-----------+
-        |                             |
-        +------------- tau -----------+
-                                      |
-                     +----------------+------------------+
-                     |                                   |
-                     v                                   v
-          +----------------------+            +------------------+
-          | GroundTruth WS JSON  |<-----------| SensorSuite      |
-          | websockerPublisher   |            | IMU MAG BARO GPS |
-          +----------+-----------+            +--------+---------+
-                     ^                                   |
-                     |                                   v
-                     |                    +--------------------------------------+
-                     +--------------------| HIL_SENSOR / HIL_GPS / HIL_STATE... |
-                                          +--------------------------------------+
-                                                          |
-                                                          v
-                                                        PX4 SITL
-
-                     +----------------------+
-                     | Transfer Alignment   |
-                     | uses y, ydot (truth) |
-                     +----------------------+
-                             ^
-                             |
-                     (from Dynamics6DOF)
-\end{verbatim}
-
 \section{Python Installation and Interaction}
 \subsection{Install}
 This repository is installable as a Python package (see \texttt{pyproject.toml}).
@@ -808,18 +892,15 @@ python src/main.py --help
 \end{verbatim}
 If using transfer alignment, start the dedicated script:
 \begin{verbatim}
-python src/transfer_alignment.py --help
+python src/vehicle/transfer_alignment.py --help
 \end{verbatim}
 
 \subsection{Interact from Python}
 You can import simulation modules and run/update components programmatically.
 \begin{verbatim}
 from vehicle.world import World
-from vehicle.model import IrisParameters, build_iris_force_models
 
-P = IrisParameters()
-world = World(parameters=P, force_models=build_iris_force_models(),
-              vehicle_model="iris")
+world = World(vehicle_model="iris")
 
 # set controls/wind, advance lockstep, read state/sensors
 world.set_controls([0.0, 0.0, 0.0, 0.0])

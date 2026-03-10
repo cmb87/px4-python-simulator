@@ -8,7 +8,7 @@ services:
       - pip-cache:/root/.cache/pip
     stdin_open: true
     tty: true
-    working_dir: /workspaces/px4-python-sitl
+    working_dir: /workspaces/px4-python-sitl/ros2_integration/ros2_ws
     command: bash -lc "sleep infinity"
 
 volumes:

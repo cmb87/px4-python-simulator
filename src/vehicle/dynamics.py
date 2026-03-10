@@ -1,8 +1,9 @@
 import numpy as np
-from quaternion import Quaternion
 import sys
 import logging
-from base_component import SimComponentBase
+
+from .base_component import SimComponentBase
+from .quaternion import Quaternion
 
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,49 @@ def dynamics(t, y, P, tau, z_ground = 100.0):
     return np.concatenate((vel_ned, quaternionsDot, accelBf, rotAccelBf))
 
 
+def rail_dynamics(t, y, P, tau):
+    _ = t
+
+    quaternions = np.asarray(y[3:7], dtype=float)
+    vel = np.asarray(y[7:10], dtype=float)
+
+    q_norm = float(np.linalg.norm(quaternions))
+    if q_norm <= 1e-9:
+        quaternions = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+    else:
+        quaternions = quaternions / q_norm
+
+    mfg = Quaternion.Mfg(quaternions)
+    mgf = mfg.T
+
+    rail_dir_ned = np.asarray(P.rail_dir_ned, dtype=float)
+    rail_dir_norm = float(np.linalg.norm(rail_dir_ned))
+    if rail_dir_norm <= 1e-9:
+        raise ValueError("Rail direction vector must be non-zero")
+    rail_dir_ned = rail_dir_ned / rail_dir_norm
+
+    vel_ned = mgf @ vel
+    vel_rail_ned = np.dot(vel_ned, rail_dir_ned) * rail_dir_ned
+
+    gravity_body = mfg @ np.array([0.0, 0.0, float(P.mass) * float(P.gravity)], dtype=float)
+    body_force = np.asarray(tau[0:3], dtype=float) + gravity_body
+    accel_body = body_force / float(P.mass)
+
+    rail_dir_body = mfg @ rail_dir_ned
+    accel_body = np.dot(accel_body, rail_dir_body) * rail_dir_body
+
+    quaternions_dot = np.zeros(4)
+    rot_accel_body = np.zeros(3)
+
+    pos = np.asarray(y[0:3], dtype=float)
+    rail_start_ned = np.asarray(P.rail_start_ned, dtype=float)
+    rail_dist = float(np.dot(pos - rail_start_ned, rail_dir_ned))
+    if rail_dist >= float(P.rail_length):
+        P.left_rail = True
+
+    return np.concatenate((vel_rail_ned, quaternions_dot, accel_body, rot_accel_body))
+
+
 
 
 
@@ -124,9 +168,10 @@ if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
 
-    from parameters import Parameters
-    from forces import forces, railForces
-    from sensors import sensors
+    from vehicle.vehicles.common_forces.catapult_rail import railForces
+    from vehicle.vehicles.x8.forces import forces
+    from vehicle.parameters import Parameters
+    from vehicle.sensors.sensors import sensors
 
     P = Parameters()  # Load parameters, assuming this is defined in parameters.py
 
@@ -174,7 +219,7 @@ if __name__ == "__main__":
         else:
             tauRail = railForces(t, y, u, wind, P)
 
-            ydot = railDynamics(t, y, P, tau+tauRail)
+            ydot = rail_dynamics(t, y, P, tau + tauRail)
         
 
         z = sensors(t, y, ydot, u, wind, P, dt)

@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from quaternion import Quaternion
-from parameters import Parameters
-from world import World
-from forces.wing_x8 import WingX8ForceModel
+from vehicle.parameters import Parameters
+from vehicle.quaternion import Quaternion
+from vehicle.world import World
+from vehicle.vehicles.x8.forces import WingX8ForceModel
 
 
 def build_initial_state():

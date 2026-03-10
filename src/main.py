@@ -9,14 +9,26 @@ from typing import Any
 import numpy as np
 from pymavlink import mavutil
 
-from px4_python_sitl.sim_utils import controls_to_u
-from px4_python_sitl.vehicle.world import World
-from transfer_alignment import (
+from vehicle.sim_utils import (
+    compute_aero_angles_deg,
+    controls_to_u,
+    get_sim_millis,
+    parse_arm_frame,
+    parse_cutover_mode,
+    parse_env_float,
+    parse_gt_ws_enabled,
+    parse_sim_role,
+    parse_vec3,
+    parse_vehicle_model,
+)
+from vehicle.world import World
+from vehicle.transfer_alignment import (
     TransferAlignmentMasterLink,
     TransferAlignmentSlaveLink,
     quat_from_euler_deg_wxyz,
     transform_master_to_slave_state,
 )
+from vehicle.vehicle_catalog import list_vehicle_models
 from visualizer.websockerPublisher import GroundTruthWebSocketPublisher
 
 
@@ -54,91 +66,6 @@ TS04_PITCH90_START = os.getenv("SIM_TS04_PITCH90_START", "1").strip().lower() in
 
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 logger = logging.getLogger(__name__)
-AVAILABLE_VEHICLE_MODELS = ("x8", "iris", "ts04")
-
-
-def get_sim_millis(sim_time_us: int) -> int:
-    return sim_time_us // 1000
-
-
-def parse_env_float(name: str, default: float) -> float:
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        return float(raw)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be a float, got '{raw}'") from exc
-
-
-def parse_vec3(raw: str, name: str) -> np.ndarray:
-    tokens = [tok.strip() for tok in str(raw).split(",") if tok.strip()]
-    if len(tokens) != 3:
-        raise ValueError(f"{name} must contain 3 comma-separated floats, got '{raw}'")
-    try:
-        return np.array([float(tokens[0]), float(tokens[1]), float(tokens[2])], dtype=float)
-    except ValueError as exc:
-        raise ValueError(f"{name} must contain floats, got '{raw}'") from exc
-
-
-def parse_sim_role(raw: str) -> str:
-    role = str(raw).strip().lower()
-    if role not in {"standalone", "master", "slave"}:
-        raise ValueError(f"SIM_ROLE must be one of standalone|master|slave, got '{raw}'")
-    return role
-
-
-def parse_cutover_mode(raw: str) -> str:
-    mode = str(raw).strip().lower()
-    if mode not in {"never", "time", "mavlink_cmd"}:
-        raise ValueError(f"SIM_TRANSFER_CUTOVER_MODE must be one of never|time|mavlink_cmd, got '{raw}'")
-    return mode
-
-
-def parse_vehicle_model(raw: str) -> str:
-    model = str(raw).strip().lower()
-    if model not in AVAILABLE_VEHICLE_MODELS:
-        choices = "|".join(AVAILABLE_VEHICLE_MODELS)
-        raise ValueError(f"SIM_VEHICLE_MODEL must be one of {choices}, got '{raw}'")
-    return model
-
-
-def parse_arm_frame(raw: str) -> str:
-    value = str(raw).strip().lower()
-    if value != "master_body":
-        raise ValueError(f"SIM_TRANSFER_ARM_FRAME only supports master_body, got '{raw}'")
-    return value
-
-
-def parse_gt_ws_enabled(role: str, raw: str) -> bool:
-    value = str(raw).strip().lower()
-    if value == "auto":
-        return role != "slave"
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    if value in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"SIM_GT_WS_ENABLED must be auto|true|false, got '{raw}'")
-
-
-def controls_to_u8(latest_controls: tuple[float, ...] | None) -> list[float]:
-    if latest_controls is None:
-        return [0.0] * 8
-    out = [0.0] * 8
-    n = min(len(latest_controls), 8)
-    for i in range(n):
-        out[i] = float(latest_controls[i])
-    return out
-
-
-def compute_aero_angles_deg(y: np.ndarray, wind: np.ndarray) -> tuple[float | None, float | None]:
-    vel_rel = np.asarray(y[7:10], dtype=float) - np.asarray(wind[:3], dtype=float)
-    u_r, v_r, w_r = vel_rel
-    Va = float(np.linalg.norm(vel_rel))
-    if Va <= 1e-5:
-        return None, None
-
-    alpha_deg = float(np.rad2deg(np.arctan2(w_r, u_r)))
-    beta_deg = float(np.rad2deg(np.arcsin(np.clip(v_r / Va, -1.0, 1.0))))
-    return alpha_deg, beta_deg
 
 
 def simulation_main() -> None:
@@ -146,7 +73,8 @@ def simulation_main() -> None:
     cutover_mode = parse_cutover_mode(TRANSFER_CUTOVER_MODE)
     transfer_arm_frame = parse_arm_frame(TRANSFER_ARM_FRAME)
     gt_ws_enabled = parse_gt_ws_enabled(role, GT_WS_ENABLED)
-    vehicle_model = parse_vehicle_model(VEHICLE_MODEL)
+    available_vehicle_models = list_vehicle_models()
+    vehicle_model = parse_vehicle_model(VEHICLE_MODEL, available_vehicle_models)
 
     mavlink_endpoint = f"tcpin:{MAVLINK_BIND_HOST}:{MAVLINK_BIND_PORT}"
     conn: Any = mavutil.mavlink_connection(mavlink_endpoint, source_component=51)
@@ -154,17 +82,6 @@ def simulation_main() -> None:
     logger.info("Waiting for Heartbeat ...")
     logger.info("Running in role: %s", role)
     logger.info("Using vehicle model: %s", vehicle_model)
-    gps_origin = {
-        "lat": parse_env_float("SIM_GPS_ORIGIN_LAT", 47.397742),
-        "lon": parse_env_float("SIM_GPS_ORIGIN_LON", 8.545594),
-        "alt": parse_env_float("SIM_GPS_ORIGIN_ALT", 470.0),
-    }
-    logger.info(
-        "Using GPS origin: lat=%.6f lon=%.6f alt=%.2f",
-        gps_origin["lat"],
-        gps_origin["lon"],
-        gps_origin["alt"],
-    )
     first_hb = conn.wait_heartbeat()
     px4_sysid = first_hb.get_srcSystem()
     if px4_sysid > 0:
@@ -172,21 +89,21 @@ def simulation_main() -> None:
         conn.mav.srcSystem = px4_sysid
         logger.info("Locked simulator SYSID to PX4 SYSID=%s", px4_sysid)
 
-    y0 = np.zeros(13)
-    y0[0:3] = np.array([0.0, 0.0, -3.0])
-    if vehicle_model == "ts04" and TS04_PITCH90_START:
-        y0[3:7] = np.array([np.sqrt(0.5), 0.0, np.sqrt(0.5), 0.0])
-    else:
-        y0[3] = 1.0
-
     world = World(
         vehicle_model=vehicle_model,
-        y0=y0,
         u0=np.zeros(4),
         wind0=np.zeros(6),
         ts04_pitch90_start=TS04_PITCH90_START,
     )
-    world.P.gps_origin = dict(gps_origin)
+    catapult_enabled = bool(getattr(world, "rail_launch_enabled", False))
+    catapult_countdown_s = max(0.0, parse_env_float("SIM_CATAPULT_LAUNCH_COUNTDOWN_S", 3.0))
+    catapult_countdown_us = int(catapult_countdown_s * 1e6)
+    catapult_countdown_active = False
+    catapult_release_time_us: int | None = None
+    next_countdown_announce_us = 0
+    if catapult_enabled:
+        logger.info("Catapult launch enabled with countdown %.1f s", catapult_countdown_s)
+
     gt_ws = GroundTruthWebSocketPublisher(host=GT_WS_HOST, port=GT_WS_PORT, enabled=gt_ws_enabled)
     gt_ws.start()
     if gt_ws_enabled:
@@ -300,9 +217,19 @@ def simulation_main() -> None:
                         logger.info("SIM <= transfer cutover command received")
 
             if armed and (not was_armed):
-                logger.info("SIM => ARM transition: dynamics enabled")
+                if catapult_enabled and catapult_countdown_us > 0:
+                    catapult_countdown_active = True
+                    catapult_release_time_us = sim_time_us + catapult_countdown_us
+                    next_countdown_announce_us = sim_time_us
+                    logger.info("SIM => ARM transition: catapult launch in %.1f s", catapult_countdown_s)
+                else:
+                    logger.info("SIM => ARM transition: dynamics enabled")
             if (not armed) and was_armed:
                 logger.info("SIM => DISARM transition: dynamics remain enabled")
+                if catapult_countdown_active:
+                    catapult_countdown_active = False
+                    catapult_release_time_us = None
+                    logger.info("SIM => Catapult countdown cancelled (disarmed)")
             was_armed = armed
 
             now_wall_s = time.time()
@@ -368,7 +295,22 @@ def simulation_main() -> None:
                 io_run_only = (slow_down_counter % CHECK_FACTOR) != 0
                 now_ms = get_sim_millis(sim_time_us)
                 needs_to_pause = (last_time_ran_ms == now_ms) or io_run_only
-                world_out = world.update(sim_time_us, needs_to_pause, freeze_dynamics=(not ever_armed))
+                if catapult_countdown_active and catapult_release_time_us is not None:
+                    if sim_time_us >= catapult_release_time_us:
+                        catapult_countdown_active = False
+                        catapult_release_time_us = None
+                        logger.info("SIM => Catapult launch release")
+                    elif sim_time_us >= next_countdown_announce_us:
+                        remaining_s = max(0.0, (catapult_release_time_us - sim_time_us) / 1e6)
+                        logger.info("SIM => Catapult countdown: %.1f s", remaining_s)
+                        next_countdown_announce_us = sim_time_us + 1_000_000
+
+                freeze_for_countdown = catapult_enabled and catapult_countdown_active
+                world_out = world.update(
+                    sim_time_us,
+                    needs_to_pause,
+                    freeze_dynamics=((not ever_armed) or freeze_for_countdown),
+                )
 
                 if role == "master" and (not needs_to_pause) and world_out is not None and transfer_master_link is not None:
                     transfer_master_link.send(sim_time_us, world_out["y"], world_out["ydot"])
@@ -386,6 +328,10 @@ def simulation_main() -> None:
                 gyro = np.asarray(z["gyroscope"], dtype=float)
                 mag = np.asarray(z["magnetometer"], dtype=float)
                 baro = z["barometer"]
+                fields_updated = 8191
+                has_airspeed_sensor = bool(getattr(world.P, "has_airspeed_sensor", False))
+                if not has_airspeed_sensor:
+                    fields_updated &= ~int(mavutil.mavlink.MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE)
 
                 conn.mav.hil_sensor_send(
                     int(sim_time_us),
@@ -402,7 +348,7 @@ def simulation_main() -> None:
                     float(baro["dynamic"]) * 0.01,
                     float(baro.get("pressure_altitude_m", gps[2])),
                     15.0,
-                    8191,
+                    int(fields_updated),
                     )
 
                 if hil_state_interval_us > 0 and sim_time_us >= next_hil_state_time_us:
@@ -468,7 +414,7 @@ def simulation_main() -> None:
                         {
                             "system_id": int(px4_sysid),
                             "time_usec": int(sim_time_us),
-                            "u": controls_to_u8(latest_controls),
+                            "u": controls_to_u(latest_controls, armed=True, size=8, clamp_throttle=False).tolist(),
                             "position_ned_m": [float(y[0]), float(y[1]), float(y[2])],
                             "quaternion_wxyz": [float(y[3]), float(y[4]), float(y[5]), float(y[6])],
                             "velocity_body_mps": [float(y[7]), float(y[8]), float(y[9])],
