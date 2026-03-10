@@ -6,7 +6,7 @@ from vehicle.world import World
 
 def test_default_vehicle_registry_contains_known_models():
     names = set(list_vehicle_models())
-    assert {"x8", "iris", "ts04"}.issubset(names)
+    assert {"x8", "iris", "ts04", "fwlm"}.issubset(names)
 
 
 def test_each_registered_model_runs_one_step():
