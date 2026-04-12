@@ -19,7 +19,7 @@ class SensorSuite(SimComponentBase):
         self._sensor_params_initialized = False
 
         self.gps = GpsSensor()
-        self.gps.set_home(47.397742, 8.545594, 488.0)
+        self.gps.set_home(48.35386539065191, 11.78159133408772, 447.0)
         self.gps.set_noise(True)
         self.gps.set_update_rate(5.0)
 
@@ -47,9 +47,9 @@ class SensorSuite(SimComponentBase):
             self.imu.set_biases(accel_bias_mps2=P.accel_bias, gyro_bias_rps=P.gyro_bias)
             self.mag.set_hard_iron(P.mag_bias)
             gps_origin = getattr(P, "gps_origin", {})
-            lat_deg = float(gps_origin.get("lat", 47.397742))
-            lon_deg = float(gps_origin.get("lon", 8.545594))
-            alt_m = float(gps_origin.get("alt", 470.0))
+            lat_deg = float(gps_origin.get("lat", 48.35386539065191))
+            lon_deg = float(gps_origin.get("lon", 11.78159133408772))
+            alt_m = float(gps_origin.get("alt", 447.0))
             self.gps.set_home(lat_deg, lon_deg, alt_m)
             self._sensor_params_initialized = True
             self._diff_pressure_initialized = False

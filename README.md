@@ -188,18 +188,27 @@ Slave (uses master dynamics with rigid transform, then optional cutover):
 
 - `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_HOST=0.0.0.0 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_TRANSFER_CUTOVER_MODE=mavlink_cmd python src/main.py`
 
-Master + slave with websocket enabled on both (same host):
+Master + slave with websocket output enabled on both (same host):
 
-- Master: `SIM_VEHICLE_MODEL=iris SIM_ROLE=master SIM_MAVLINK_BIND_PORT=4560 SIM_TRANSFER_UDP_TARGET_HOST=127.0.0.1 SIM_TRANSFER_UDP_TARGET_PORT=18000 SIM_GT_WS_ENABLED=true SIM_GT_WS_HOST=0.0.0.0 SIM_GT_WS_PORT=8765 python src/main.py`
-- Slave: `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_HOST=0.0.0.0 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_TRANSFER_CUTOVER_MODE=mavlink_cmd SIM_GT_WS_ENABLED=true SIM_GT_WS_HOST=0.0.0.0 SIM_GT_WS_PORT=8766 python src/main.py`
+- Master: `SIM_VEHICLE_MODEL=iris SIM_ROLE=master SIM_MAVLINK_BIND_PORT=4560 SIM_TRANSFER_UDP_TARGET_HOST=127.0.0.1 SIM_TRANSFER_UDP_TARGET_PORT=18000 SIM_GT_OUTPUT_MODE=websocket SIM_GT_OUTPUT_RATE_HZ=30 SIM_GT_WS_HOST=0.0.0.0 SIM_GT_WS_PORT=8765 python src/main.py`
+- Slave: `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_HOST=0.0.0.0 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_TRANSFER_CUTOVER_MODE=mavlink_cmd SIM_GT_OUTPUT_MODE=websocket SIM_GT_OUTPUT_RATE_HZ=30 SIM_GT_WS_HOST=0.0.0.0 SIM_GT_WS_PORT=8766 python src/main.py`
 
-Ground-truth websocket options (useful for multi-instance setups):
+Ground-truth output options:
 
-- `SIM_GT_WS_ENABLED=auto|true|false` (default `auto`; enabled for `standalone`/`master`, disabled for `slave`)
+- `SIM_GT_OUTPUT_MODE=websocket|flightgear_udp|off` (default `websocket`)
+- `SIM_GT_OUTPUT_RATE_HZ` (default `30.0`)
 - `SIM_GT_WS_HOST` (default `0.0.0.0`)
 - `SIM_GT_WS_PORT` (default `8765`)
+- `SIM_FG_UDP_HOST` (default `127.0.0.1`)
+- `SIM_FG_UDP_PORT` (default `5503`)
 
-If websocket is enabled on multiple instances, use unique `SIM_GT_WS_PORT` values per instance.
+If websocket output is enabled on multiple instances, use unique `SIM_GT_WS_PORT` values per instance.
+
+FlightGear UDP mode publishes smooth ground-truth pose (not noisy GPS sensor output) as FGNetFDM v24 packets.
+
+Example (FlightGear UDP output):
+
+- `SIM_VEHICLE_MODEL=iris SIM_ROLE=standalone SIM_GT_OUTPUT_MODE=flightgear_udp SIM_GT_OUTPUT_RATE_HZ=30 SIM_FG_UDP_HOST=127.0.0.1 SIM_FG_UDP_PORT=5503 python src/main.py`
 
 Model selection works in all roles, e.g.:
 
@@ -251,11 +260,11 @@ For `mavlink_cmd`, send `COMMAND_LONG` with `MAV_CMD_USER_1` to trigger cutover.
 
 Master:
 
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=master SIM_MAVLINK_BIND_PORT=4560 SIM_TRANSFER_UDP_TARGET_HOST=127.0.0.1 SIM_TRANSFER_UDP_TARGET_PORT=18000 SIM_GT_WS_ENABLED=true SIM_GT_WS_PORT=8765 python src/main.py`
+- `SIM_VEHICLE_MODEL=iris SIM_ROLE=master SIM_MAVLINK_BIND_PORT=4560 SIM_TRANSFER_UDP_TARGET_HOST=127.0.0.1 SIM_TRANSFER_UDP_TARGET_PORT=18000 SIM_GT_OUTPUT_MODE=websocket SIM_GT_OUTPUT_RATE_HZ=30 SIM_GT_WS_PORT=8765 python src/main.py`
 
 Slave:
 
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_ARM_FRAME=master_body SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_GT_WS_ENABLED=true SIM_GT_WS_PORT=8766 python src/main.py`
+- `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_ARM_FRAME=master_body SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_GT_OUTPUT_MODE=websocket SIM_GT_OUTPUT_RATE_HZ=30 SIM_GT_WS_PORT=8766 python src/main.py`
 
 ## Transfer Alignment Flow and Lever Compensation
 

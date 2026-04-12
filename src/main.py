@@ -4,6 +4,7 @@
 import os
 import time
 import logging
+import math
 from typing import Any
 
 import numpy as np
@@ -16,11 +17,13 @@ from vehicle.sim_utils import (
     parse_arm_frame,
     parse_cutover_mode,
     parse_env_float,
-    parse_gt_ws_enabled,
+    parse_gt_output_mode,
+    parse_positive_float,
     parse_sim_role,
     parse_vec3,
     parse_vehicle_model,
 )
+from vehicle.quaternion import Quaternion
 from vehicle.world import World
 from vehicle.transfer_alignment import (
     TransferAlignmentMasterLink,
@@ -30,17 +33,18 @@ from vehicle.transfer_alignment import (
 )
 from vehicle.vehicle_catalog import list_vehicle_models
 from visualizer.websockerPublisher import GroundTruthWebSocketPublisher
+from visualizer.flightgearUdpPublisher import FlightGearUdpPublisher
 
 
 
 RATE_HZ = 250
 DT_US = int(1e6 / RATE_HZ)
 HEARTBEAT_INTERVAL_US = 1_000_000
-WEBSOCKET_INTERVAL_US = 5_000_0
 SYSTEM_TIME_INTERVAL_US = 1_000_000
 GPS_START_DELAY_US = 1_000_000
 MAVLINK_MSG_ID_HIL_STATE_QUATERNION = 115
 MAV_CMD_TRANSFER_CUTOVER = int(getattr(mavutil.mavlink, "MAV_CMD_USER_1", 31000))
+HIL_SENSOR_UPDATED_DIFF_PRESSURE_BIT = 1 << 10
 CHECK_FACTOR = 2
 
 SIM_ROLE = os.getenv("SIM_ROLE", "standalone").strip().lower()
@@ -60,7 +64,10 @@ TRANSFER_CUTOVER_TIME_S = float(os.getenv("SIM_TRANSFER_CUTOVER_TIME_S", "10.0")
 
 GT_WS_HOST = os.getenv("SIM_GT_WS_HOST", "0.0.0.0")
 GT_WS_PORT = int(os.getenv("SIM_GT_WS_PORT", "8765"))
-GT_WS_ENABLED = os.getenv("SIM_GT_WS_ENABLED", "auto").strip().lower()
+GT_OUTPUT_MODE = os.getenv("SIM_GT_OUTPUT_MODE", "websocket").strip().lower()
+GT_OUTPUT_RATE_HZ_RAW = os.getenv("SIM_GT_OUTPUT_RATE_HZ", "30.0")
+FG_UDP_HOST = os.getenv("SIM_FG_UDP_HOST", "127.0.0.1")
+FG_UDP_PORT = int(os.getenv("SIM_FG_UDP_PORT", "5503"))
 VEHICLE_MODEL = os.getenv("SIM_VEHICLE_MODEL", "ts04").strip().lower()
 TS04_PITCH90_START = os.getenv("SIM_TS04_PITCH90_START", "1").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -68,11 +75,36 @@ LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 logger = logging.getLogger(__name__)
 
 
+def ned_to_lla_from_origin(pos_ned_m: np.ndarray, lat_home_deg: float, lon_home_deg: float, alt_home_m: float) -> tuple[float, float, float]:
+    earth_radius_m = 6371000.0
+    x_rad = float(pos_ned_m[0]) / earth_radius_m
+    y_rad = float(pos_ned_m[1]) / earth_radius_m
+    c = math.sqrt(x_rad * x_rad + y_rad * y_rad)
+    lat_home = math.radians(lat_home_deg)
+    lon_home = math.radians(lon_home_deg)
+
+    if c > 0.0:
+        sin_c = math.sin(c)
+        cos_c = math.cos(c)
+        sin_lat0 = math.sin(lat_home)
+        cos_lat0 = math.cos(lat_home)
+        lat = math.asin(cos_c * sin_lat0 + (x_rad * sin_c * cos_lat0) / c)
+        lon = lon_home + math.atan2(y_rad * sin_c, c * cos_lat0 * cos_c - x_rad * sin_lat0 * sin_c)
+    else:
+        lat = lat_home
+        lon = lon_home
+
+    alt_m = float(alt_home_m) - float(pos_ned_m[2])
+    return math.degrees(lat), math.degrees(lon), alt_m
+
+
 def simulation_main() -> None:
     role = parse_sim_role(SIM_ROLE)
     cutover_mode = parse_cutover_mode(TRANSFER_CUTOVER_MODE)
     transfer_arm_frame = parse_arm_frame(TRANSFER_ARM_FRAME)
-    gt_ws_enabled = parse_gt_ws_enabled(role, GT_WS_ENABLED)
+    gt_output_mode = parse_gt_output_mode(GT_OUTPUT_MODE)
+    gt_output_rate_hz = parse_positive_float(GT_OUTPUT_RATE_HZ_RAW, "SIM_GT_OUTPUT_RATE_HZ")
+    gt_output_interval_us = max(1, int(1e6 / gt_output_rate_hz))
     available_vehicle_models = list_vehicle_models()
     vehicle_model = parse_vehicle_model(VEHICLE_MODEL, available_vehicle_models)
 
@@ -87,7 +119,8 @@ def simulation_main() -> None:
     if px4_sysid > 0:
         conn.source_system = px4_sysid
         conn.mav.srcSystem = px4_sysid
-        logger.info("Locked simulator SYSID to PX4 SYSID=%s", px4_sysid)
+        logger.info("Detected PX4 SYSID=%s", px4_sysid)
+        logger.info("MAVLink simulator source set to SYSID=%s COMPID=%s", conn.source_system, conn.source_component)
 
     world = World(
         vehicle_model=vehicle_model,
@@ -104,12 +137,22 @@ def simulation_main() -> None:
     if catapult_enabled:
         logger.info("Catapult launch enabled with countdown %.1f s", catapult_countdown_s)
 
-    gt_ws = GroundTruthWebSocketPublisher(host=GT_WS_HOST, port=GT_WS_PORT, enabled=gt_ws_enabled)
+    gps_origin = getattr(world.P, "gps_origin", {})
+    origin_lat_deg = float(gps_origin.get("lat", 48.35386539065191))
+    origin_lon_deg = float(gps_origin.get("lon", 11.78159133408772))
+    origin_alt_m = float(gps_origin.get("alt", 447.0))
+
+    gt_ws = GroundTruthWebSocketPublisher(host=GT_WS_HOST, port=GT_WS_PORT, enabled=(gt_output_mode == "websocket"))
     gt_ws.start()
-    if gt_ws_enabled:
+    fg_udp: FlightGearUdpPublisher | None = None
+    if gt_output_mode == "websocket":
         logger.info("Ground-truth WS target: ws://%s:%s", GT_WS_HOST, GT_WS_PORT)
+    elif gt_output_mode == "flightgear_udp":
+        fg_udp = FlightGearUdpPublisher(host=FG_UDP_HOST, port=FG_UDP_PORT)
+        logger.info("FlightGear UDP target: udp://%s:%s", FG_UDP_HOST, FG_UDP_PORT)
     else:
-        logger.info("Ground-truth WS disabled")
+        logger.info("External ground-truth output disabled")
+    logger.info("Ground-truth output mode=%s rate=%.2f Hz", gt_output_mode, gt_output_rate_hz)
 
     transfer_master_link: TransferAlignmentMasterLink | None = None
     transfer_slave_link: TransferAlignmentSlaveLink | None = None
@@ -150,7 +193,7 @@ def simulation_main() -> None:
 
     sim_time_us = 0
     next_heartbeat_time_us = 0
-    next_websocket_time_us = 0
+    next_output_time_us = 0
     next_system_time_us = 0
     gps_start_time_us = GPS_START_DELAY_US
     hil_state_interval_us = -1
@@ -331,7 +374,7 @@ def simulation_main() -> None:
                 fields_updated = 8191
                 has_airspeed_sensor = bool(getattr(world.P, "has_airspeed_sensor", False))
                 if not has_airspeed_sensor:
-                    fields_updated &= ~int(mavutil.mavlink.MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE)
+                    fields_updated &= ~HIL_SENSOR_UPDATED_DIFF_PRESSURE_BIT
 
                 conn.mav.hil_sensor_send(
                     int(sim_time_us),
@@ -408,29 +451,50 @@ def simulation_main() -> None:
                         0,
                     )
 
-                if sim_time_us >= next_websocket_time_us:
-                    alpha_deg, beta_deg = compute_aero_angles_deg(y, world.wind)
-                    gt_ws.publish(
-                        {
-                            "system_id": int(px4_sysid),
-                            "time_usec": int(sim_time_us),
-                            "u": controls_to_u(latest_controls, armed=True, size=8, clamp_throttle=False).tolist(),
-                            "position_ned_m": [float(y[0]), float(y[1]), float(y[2])],
-                            "quaternion_wxyz": [float(y[3]), float(y[4]), float(y[5]), float(y[6])],
-                            "velocity_body_mps": [float(y[7]), float(y[8]), float(y[9])],
-                            "angular_rate_body_rps": [float(y[10]), float(y[11]), float(y[12])],
-                            "lla": {
-                                "lat_deg": float(gps[0]),
-                                "lon_deg": float(gps[1]),
-                                "alt_m": float(gps[2]),
-                            },
-                            "aero": {
-                                "alpha_deg": alpha_deg,
-                                "beta_deg": beta_deg,
-                            },
-                        }
-                    )
-                    next_websocket_time_us = sim_time_us + WEBSOCKET_INTERVAL_US
+                if gt_output_mode != "off" and sim_time_us >= next_output_time_us:
+                    if gt_output_mode == "websocket":
+                        alpha_deg, beta_deg = compute_aero_angles_deg(y, world.wind)
+                        gt_ws.publish(
+                            {
+                                "system_id": int(px4_sysid),
+                                "time_usec": int(sim_time_us),
+                                "u": controls_to_u(latest_controls, armed=True, size=8, clamp_throttle=False).tolist(),
+                                "position_ned_m": [float(y[0]), float(y[1]), float(y[2])],
+                                "quaternion_wxyz": [float(y[3]), float(y[4]), float(y[5]), float(y[6])],
+                                "velocity_body_mps": [float(y[7]), float(y[8]), float(y[9])],
+                                "angular_rate_body_rps": [float(y[10]), float(y[11]), float(y[12])],
+                                "lla": {
+                                    "lat_deg": float(gps[0]),
+                                    "lon_deg": float(gps[1]),
+                                    "alt_m": float(gps[2]),
+                                },
+                                "aero": {
+                                    "alpha_deg": alpha_deg,
+                                    "beta_deg": beta_deg,
+                                },
+                            }
+                        )
+                    elif fg_udp is not None:
+                        lat_deg, lon_deg, alt_m = ned_to_lla_from_origin(
+                            y[0:3],
+                            lat_home_deg=origin_lat_deg,
+                            lon_home_deg=origin_lon_deg,
+                            alt_home_m=origin_alt_m,
+                        )
+                        quat = np.asarray(y[3:7], dtype=float)
+                        quat_norm = float(np.linalg.norm(quat))
+                        quat_wxyz = quat / quat_norm if quat_norm > 0.0 else np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+                        euler_deg = np.rad2deg(Quaternion.quat2Euler(quat_wxyz))
+                        fg_udp.publish(
+                            lat_deg=lat_deg,
+                            lon_deg=lon_deg,
+                            alt_m=alt_m,
+                            roll_deg=float(euler_deg[0]),
+                            pitch_deg=float(euler_deg[1]),
+                            yaw_deg=float(euler_deg[2]),
+                        )
+
+                    next_output_time_us = sim_time_us + gt_output_interval_us
 
 
                 last_time_ran_ms = now_ms
@@ -454,6 +518,8 @@ def simulation_main() -> None:
         if transfer_slave_link is not None:
             transfer_slave_link.close()
         gt_ws.stop()
+        if fg_udp is not None:
+            fg_udp.close()
 
 
 def main() -> None:
