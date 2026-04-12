@@ -143,15 +143,21 @@ def parse_arm_frame(raw: str) -> str:
     return value
 
 
-def parse_gt_ws_enabled(role: str, raw: str) -> bool:
-    value = str(raw).strip().lower()
-    if value == "auto":
-        return role != "slave"
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    if value in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"SIM_GT_WS_ENABLED must be auto|true|false, got '{raw}'")
+def parse_gt_output_mode(raw: str) -> str:
+    mode = str(raw).strip().lower()
+    if mode not in {"websocket", "flightgear_udp", "off"}:
+        raise ValueError(f"SIM_GT_OUTPUT_MODE must be one of websocket|flightgear_udp|off, got '{raw}'")
+    return mode
+
+
+def parse_positive_float(raw: str, name: str) -> float:
+    try:
+        value = float(str(raw).strip())
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a float, got '{raw}'") from exc
+    if value <= 0.0:
+        raise ValueError(f"{name} must be > 0, got '{raw}'")
+    return value
 
 
 def compute_aero_angles_deg(y: np.ndarray, wind: np.ndarray) -> tuple[float | None, float | None]:

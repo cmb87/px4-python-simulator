@@ -1,5 +1,6 @@
 import logging
 import math
+import os
 import random
 
 from ..base_component import SimComponentBase
@@ -17,7 +18,7 @@ class BarometerSensor(SimComponentBase):
         self.enable_noise = True
 
         # Constants (ISA - International Standard Atmosphere)
-        self.ALT_HOME_AMSL = 488.0  # meters
+        self.ALT_HOME_AMSL = float(os.getenv("SIM_GPS_ALT", "447.0"))  # meters
         self.TEMPERATURE_MSL = 288.15  # Kelvin (15°C)
         self.PRESSURE_MSL = 101325.0  # Pa
         self.LAPSE_RATE = 0.0065  # K/m

@@ -92,9 +92,9 @@ class X8Parameters:
         self.gps_vel_noise_std = 0.0001 * np.array([0.01, 0.01, 0.01])
 
         self.gps_origin = {
-            "lat": float(os.getenv("SIM_GPS_LAT", "47.397742")),
-            "lon": float(os.getenv("SIM_GPS_LON", "8.545594")),
-            "alt": float(os.getenv("SIM_GPS_ALT", "470.0")),
+            "lat": float(os.getenv("SIM_GPS_LAT", "48.35386539065191")),
+            "lon": float(os.getenv("SIM_GPS_LON", "11.78159133408772")),
+            "alt": float(os.getenv("SIM_GPS_ALT", "447.0")),
         }
 
         self.rail_launch_enabled = True
