@@ -113,20 +113,6 @@ def parse_vec3(raw: str, name: str) -> np.ndarray:
         raise ValueError(f"{name} must contain floats, got '{raw}'") from exc
 
 
-def parse_sim_role(raw: str) -> str:
-    role = str(raw).strip().lower()
-    if role not in {"standalone", "master", "slave"}:
-        raise ValueError(f"SIM_ROLE must be one of standalone|master|slave, got '{raw}'")
-    return role
-
-
-def parse_cutover_mode(raw: str) -> str:
-    mode = str(raw).strip().lower()
-    if mode not in {"never", "time", "mavlink_cmd"}:
-        raise ValueError(f"SIM_TRANSFER_CUTOVER_MODE must be one of never|time|mavlink_cmd, got '{raw}'")
-    return mode
-
-
 def parse_vehicle_model(raw: str, choices: Sequence[str]) -> str:
     model = str(raw).strip().lower()
     normalized_choices = tuple(str(choice).strip().lower() for choice in choices)
@@ -134,13 +120,6 @@ def parse_vehicle_model(raw: str, choices: Sequence[str]) -> str:
         joined_choices = "|".join(normalized_choices)
         raise ValueError(f"SIM_VEHICLE_MODEL must be one of {joined_choices}, got '{raw}'")
     return model
-
-
-def parse_arm_frame(raw: str) -> str:
-    value = str(raw).strip().lower()
-    if value != "master_body":
-        raise ValueError(f"SIM_TRANSFER_ARM_FRAME only supports master_body, got '{raw}'")
-    return value
 
 
 def parse_gt_output_mode(raw: str) -> str:

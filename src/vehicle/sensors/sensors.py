@@ -8,6 +8,16 @@ from .imu import ADIS16448IMU
 from .magnetometer import MagnetometerSim
 
 
+DEFAULT_GPS_ORIGIN = {
+    "lat": 0.0,
+    "lon": 0.0,
+    "alt": 0.0,
+}
+
+DEFAULT_DIFF_PRESSURE_NOISE_STD = 0.002
+DEFAULT_DIFF_PRESSURE_LPF_TAU_S = 0.08
+
+
 class SensorSuite(SimComponentBase):
     def __init__(self):
         super().__init__()
@@ -19,7 +29,6 @@ class SensorSuite(SimComponentBase):
         self._sensor_params_initialized = False
 
         self.gps = GpsSensor()
-        self.gps.set_home(48.35386539065191, 11.78159133408772, 447.0)
         self.gps.set_noise(True)
         self.gps.set_update_rate(5.0)
 
@@ -28,6 +37,22 @@ class SensorSuite(SimComponentBase):
         self.baro.set_drift_rate(0.05)
         self.baro.set_noise(True)
 
+        self._diff_pressure_initialized = False
+        self._diff_pressure_pa = 0.0
+
+    def _initialize_from_parameters(self, P):
+        gps_origin = getattr(P, "gps_origin", DEFAULT_GPS_ORIGIN)
+        lat_deg = float(gps_origin.get("lat", DEFAULT_GPS_ORIGIN["lat"]))
+        lon_deg = float(gps_origin.get("lon", DEFAULT_GPS_ORIGIN["lon"]))
+        alt_m = float(gps_origin.get("alt", DEFAULT_GPS_ORIGIN["alt"]))
+        gravity_mps2 = float(getattr(P, "gravity", 9.81))
+
+        self.gps.set_home(lat_deg, lon_deg, alt_m)
+        self.baro.set_home_altitude(alt_m)
+        self.baro.set_gravity(gravity_mps2)
+        self.imu.set_gravity(gravity_mps2)
+
+        self._sensor_params_initialized = True
         self._diff_pressure_initialized = False
         self._diff_pressure_pa = 0.0
 
@@ -44,16 +69,7 @@ class SensorSuite(SimComponentBase):
             raise ValueError("SensorSuite requires inputs: y, ydot, P")
 
         if not self._sensor_params_initialized:
-            self.imu.set_biases(accel_bias_mps2=P.accel_bias, gyro_bias_rps=P.gyro_bias)
-            self.mag.set_hard_iron(P.mag_bias)
-            gps_origin = getattr(P, "gps_origin", {})
-            lat_deg = float(gps_origin.get("lat", 48.35386539065191))
-            lon_deg = float(gps_origin.get("lon", 11.78159133408772))
-            alt_m = float(gps_origin.get("alt", 447.0))
-            self.gps.set_home(lat_deg, lon_deg, alt_m)
-            self._sensor_params_initialized = True
-            self._diff_pressure_initialized = False
-            self._diff_pressure_pa = 0.0
+            self._initialize_from_parameters(P)
 
         pos = y[0:3]
         quat = y[3:7] / np.linalg.norm(y[3:7])
@@ -100,7 +116,7 @@ class SensorSuite(SimComponentBase):
         dt = self._compute_dt_s(t_us)
         if dt <= 0.0:
             dt = 1.0 / 250.0
-        diff_pressure_lpf_tau_s = max(float(getattr(P, "diff_pressure_lpf_tau_s", 0.08)), 1e-6)
+        diff_pressure_lpf_tau_s = max(float(DEFAULT_DIFF_PRESSURE_LPF_TAU_S), 1e-6)
         alpha_dp = dt / (diff_pressure_lpf_tau_s + dt)
 
         if not self._diff_pressure_initialized:
@@ -109,7 +125,7 @@ class SensorSuite(SimComponentBase):
         else:
             self._diff_pressure_pa = self._diff_pressure_pa + alpha_dp * (dynamic_pressure_ideal - self._diff_pressure_pa)
 
-        diff_pressure_noise_std = float(getattr(P, "diff_pressure_noise_std", P.baro_noise_std))
+        diff_pressure_noise_std = float(DEFAULT_DIFF_PRESSURE_NOISE_STD)
         dynamic_pressure_meas = self._diff_pressure_pa + np.random.normal(0.0, diff_pressure_noise_std)
         dynamic_pressure_meas = max(float(dynamic_pressure_meas), 0.0)
         rho_air = max(float(P.rho), 1e-6)

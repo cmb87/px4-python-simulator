@@ -168,30 +168,17 @@ The document covers:
 - 6DOF dynamics kernel
 - vehicle models (`iris`, `x8`, `ts04`)
 - sensor and force models
-- MAVLink HIL and external interfaces (UDP transfer alignment and WebSocket ground truth)
+- MAVLink HIL and external interfaces (WebSocket/FlightGear ground truth)
 
 ## Run
 
 - Optional ground-truth view: `python ground_truth_ws_visualizer.py --host 127.0.0.1 --port 8765`
 
-### Start by role
+### Start
 
-Standalone (single simulator instance, no transfer alignment):
+Single-instance simulator run:
 
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=standalone SIM_MAVLINK_BIND_PORT=4560 python src/main.py`
-
-Master (runs local dynamics and streams ground truth to slave over UDP):
-
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=master SIM_MAVLINK_BIND_PORT=4560 SIM_TRANSFER_UDP_TARGET_HOST=127.0.0.1 SIM_TRANSFER_UDP_TARGET_PORT=18000 python src/main.py`
-
-Slave (uses master dynamics with rigid transform, then optional cutover):
-
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_HOST=0.0.0.0 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_TRANSFER_CUTOVER_MODE=mavlink_cmd python src/main.py`
-
-Master + slave with websocket output enabled on both (same host):
-
-- Master: `SIM_VEHICLE_MODEL=iris SIM_ROLE=master SIM_MAVLINK_BIND_PORT=4560 SIM_TRANSFER_UDP_TARGET_HOST=127.0.0.1 SIM_TRANSFER_UDP_TARGET_PORT=18000 SIM_GT_OUTPUT_MODE=websocket SIM_GT_OUTPUT_RATE_HZ=30 SIM_GT_WS_HOST=0.0.0.0 SIM_GT_WS_PORT=8765 python src/main.py`
-- Slave: `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_HOST=0.0.0.0 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_TRANSFER_CUTOVER_MODE=mavlink_cmd SIM_GT_OUTPUT_MODE=websocket SIM_GT_OUTPUT_RATE_HZ=30 SIM_GT_WS_HOST=0.0.0.0 SIM_GT_WS_PORT=8766 python src/main.py`
+- `SIM_VEHICLE_MODEL=iris SIM_MAVLINK_BIND_PORT=4560 python src/main.py`
 
 Ground-truth output options:
 
@@ -208,90 +195,8 @@ FlightGear UDP mode publishes smooth ground-truth pose (not noisy GPS sensor out
 
 Example (FlightGear UDP output):
 
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=standalone SIM_GT_OUTPUT_MODE=flightgear_udp SIM_GT_OUTPUT_RATE_HZ=30 SIM_FG_UDP_HOST=127.0.0.1 SIM_FG_UDP_PORT=5503 python src/main.py`
+- `SIM_VEHICLE_MODEL=iris SIM_GT_OUTPUT_MODE=flightgear_udp SIM_GT_OUTPUT_RATE_HZ=30 SIM_FG_UDP_HOST=127.0.0.1 SIM_FG_UDP_PORT=5503 python src/main.py`
 
-Model selection works in all roles, e.g.:
+Model selection example:
 
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=standalone python src/main.py`
-
-## Transfer Alignment (Master/Slave)
-
-`src/main.py` supports three runtime roles:
-
-- `SIM_ROLE=standalone` (default): local dynamics only.
-- `SIM_ROLE=master`: local dynamics + UDP ground-truth stream (`time_us`, `y`, `ydot`) for a slave instance.
-- `SIM_ROLE=slave`: receives master stream, applies rigid transform (arm + relative orientation), and publishes transformed sensors to its own PX4 instance. Cutover can switch from coupled master dynamics to local slave dynamics.
-
-### Role and MAVLink endpoint
-
-- `SIM_MAVLINK_BIND_HOST` (default `0.0.0.0`)
-- `SIM_MAVLINK_BIND_PORT` (default `4560`)
-
-Use different MAVLink bind ports for master/slave when running both simultaneously.
-
-### Master transfer stream
-
-- `SIM_TRANSFER_UDP_TARGET_HOST` (default `127.0.0.1`)
-- `SIM_TRANSFER_UDP_TARGET_PORT` (default `18000`)
-
-### Slave transfer input and transform
-
-- `SIM_TRANSFER_UDP_BIND_HOST` (default `0.0.0.0`)
-- `SIM_TRANSFER_UDP_BIND_PORT` (default `18000`)
-- `SIM_TRANSFER_TIMEOUT_S` (default `1.0`)
-- `SIM_TRANSFER_ARM_M=dx,dy,dz` arm offset vector [m]
-- `SIM_TRANSFER_ARM_FRAME=master_body` (only supported option)
-  - `master_body`: arm is fixed in master body frame (rigid-body lever-arm model)
-- `SIM_TRANSFER_REL_EULER_DEG=roll,pitch,yaw` fixed slave-from-master body rotation [deg]
-
-Connection notifications:
-
-- Slave logs when transfer connection to master is established.
-- Master logs when it receives a transfer connection hello from a slave endpoint.
-
-### Slave cutover modes
-
-- `SIM_TRANSFER_CUTOVER_MODE=never|time|mavlink_cmd` (default `mavlink_cmd`)
-- `SIM_TRANSFER_CUTOVER_TIME_S` (used when mode is `time`)
-
-For `mavlink_cmd`, send `COMMAND_LONG` with `MAV_CMD_USER_1` to trigger cutover.
-
-### Example two-instance setup (same host)
-
-Master:
-
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=master SIM_MAVLINK_BIND_PORT=4560 SIM_TRANSFER_UDP_TARGET_HOST=127.0.0.1 SIM_TRANSFER_UDP_TARGET_PORT=18000 SIM_GT_OUTPUT_MODE=websocket SIM_GT_OUTPUT_RATE_HZ=30 SIM_GT_WS_PORT=8765 python src/main.py`
-
-Slave:
-
-- `SIM_VEHICLE_MODEL=iris SIM_ROLE=slave SIM_MAVLINK_BIND_PORT=4561 SIM_TRANSFER_UDP_BIND_PORT=18000 SIM_TRANSFER_ARM_M=0.5,0.0,0.0 SIM_TRANSFER_ARM_FRAME=master_body SIM_TRANSFER_REL_EULER_DEG=0.0,0.0,15.0 SIM_GT_OUTPUT_MODE=websocket SIM_GT_OUTPUT_RATE_HZ=30 SIM_GT_WS_PORT=8766 python src/main.py`
-
-## Transfer Alignment Flow and Lever Compensation
-
-```mermaid
-flowchart TD
-  MState[Master state from local dynamics\ny_m, ydot_m] --> UDP[UDP transfer packet\nseq, time_us, y, ydot]
-  UDP --> SRecv[Slave receives latest packet]
-  SRecv --> Arm[Arm frame fixed to master body\nr = R_mw * arm_m]
-  Arm --> Kine
-  Kine[Lever compensation\nv_s,w = v_m,w + omega_w x r\na_s,w = a_m,w + alpha_w x r + omega_w x (omega_w x r)] --> Rot
-  Rot[Apply relative attitude\nq_s = q_sm ⊗ q_m\nomega_s,b = R_sm * omega_m,b\nv_s,b = R_sw * v_s,w] --> Out
-  Out[Publish transformed slave sensors\nto slave PX4 instance]
-```
-
-Symbols below match `src/vehicle/transfer_alignment.py` (`transform_master_to_slave_state(...)`):
-
-- `q_m`: master attitude quaternion (wxyz), body-to-world matrix `R_mw = Mfg(q_m)^T`
-- `q_sm`: fixed slave-from-master body rotation from `SIM_TRANSFER_REL_EULER_DEG`
-- `q_s = q_sm ⊗ q_m`: slave attitude quaternion
-- `arm_m`: `SIM_TRANSFER_ARM_M` lever arm
-- `r`: lever arm in world frame (`r = R_mw arm_m`)
-
-Equations used for rigid-body lever-arm compensation:
-
-- Position: `p_s = p_m + r`
-- Angular rate (slave body): `omega_s,b = R_sm omega_m,b`
-- World velocity: `v_s,w = v_m,w + omega_w x r`
-- World acceleration: `a_s,w = a_m,w + alpha_w x r + omega_w x (omega_w x r)`
-- Slave body velocity derivative: `dv_s,b = R_sw a_s,w - omega_s,b x v_s,b`
-- Quaternion derivative: `qdot_s = 0.5 * Omega(omega_s,b) * q_s`
+- `SIM_VEHICLE_MODEL=iris python src/main.py`

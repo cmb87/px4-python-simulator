@@ -1,12 +1,17 @@
 import logging
 import math
-import os
 import random
 
 from ..base_component import SimComponentBase
 
 
 logger = logging.getLogger(__name__)
+
+ISA_TEMPERATURE_MSL_K = 288.15
+ISA_PRESSURE_MSL_PA = 101325.0
+ISA_LAPSE_RATE_K_PER_M = 0.0065
+ISA_AIR_DENSITY_MSL_KGPM3 = 1.225
+ABSOLUTE_ZERO_C = -273.15
 
 class BarometerSensor(SimComponentBase):
     def __init__(self):
@@ -17,14 +22,8 @@ class BarometerSensor(SimComponentBase):
         self.dt = 1.0 / 50.0  # default 50 Hz update rate
         self.enable_noise = True
 
-        # Constants (ISA - International Standard Atmosphere)
-        self.ALT_HOME_AMSL = float(os.getenv("SIM_GPS_ALT", "447.0"))  # meters
-        self.TEMPERATURE_MSL = 288.15  # Kelvin (15°C)
-        self.PRESSURE_MSL = 101325.0  # Pa
-        self.LAPSE_RATE = 0.0065  # K/m
-        self.AIR_DENSITY_MSL = 1.225  # kg/m^3
-        self.ABSOLUTE_ZERO_C = -273.15
-        self.GRAVITY = 9.80665  # m/s²
+        self.home_altitude_amsl_m = 0.0
+        self.gravity_mps2 = 9.81
 
         # Drift and noise
         self.pressure_drift_pa_per_sec = 0.0
@@ -41,6 +40,12 @@ class BarometerSensor(SimComponentBase):
 
     def set_drift_rate(self, drift_pa_per_sec: float):
         self.pressure_drift_pa_per_sec = drift_pa_per_sec
+
+    def set_home_altitude(self, alt_home_amsl_m: float):
+        self.home_altitude_amsl_m = float(alt_home_amsl_m)
+
+    def set_gravity(self, gravity_mps2: float):
+        self.gravity_mps2 = float(gravity_mps2)
 
     def reset(self, time_start: float = 0.0):
         self.time = time_start
@@ -84,14 +89,14 @@ class BarometerSensor(SimComponentBase):
 
         # Altitude above sea level
         alt_rel = z_position_local
-        alt_amsl = self.ALT_HOME_AMSL + alt_rel
+        alt_amsl = self.home_altitude_amsl_m + alt_rel
 
         # Temperature at current altitude
-        temperature = self.TEMPERATURE_MSL - self.LAPSE_RATE * alt_amsl
+        temperature = ISA_TEMPERATURE_MSL_K - ISA_LAPSE_RATE_K_PER_M * alt_amsl
 
         # Ideal pressure at altitude
-        pressure_ratio = (self.TEMPERATURE_MSL / temperature) ** 5.256
-        absolute_pressure = self.PRESSURE_MSL / pressure_ratio
+        pressure_ratio = (ISA_TEMPERATURE_MSL_K / temperature) ** 5.256
+        absolute_pressure = ISA_PRESSURE_MSL_PA / pressure_ratio
 
         # Add noise and drift
         noise = self._gaussian_noise() * self.noise_stddev if self.enable_noise else 0.0
@@ -102,14 +107,14 @@ class BarometerSensor(SimComponentBase):
         pressure_hpa = pressure_noisy * 0.01
 
         # Calculate air density at current altitude
-        density_ratio = (self.TEMPERATURE_MSL / temperature) ** 4.256
-        air_density = self.AIR_DENSITY_MSL / density_ratio
+        density_ratio = (ISA_TEMPERATURE_MSL_K / temperature) ** 4.256
+        air_density = ISA_AIR_DENSITY_MSL_KGPM3 / density_ratio
 
         # Compute pressure altitude (approximate)
-        pressure_altitude = alt_amsl - (noise + self.pressure_drift_pa) / (self.GRAVITY * air_density)
+        pressure_altitude = alt_amsl - (noise + self.pressure_drift_pa) / (self.gravity_mps2 * air_density)
 
         # Temperature in Celsius
-        temperature_c = temperature + self.ABSOLUTE_ZERO_C
+        temperature_c = temperature + ABSOLUTE_ZERO_C
 
         self.last_output = {
             "time_usec": self.time_us,

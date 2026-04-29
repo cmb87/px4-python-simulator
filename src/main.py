@@ -14,23 +14,13 @@ from vehicle.sim_utils import (
     compute_aero_angles_deg,
     controls_to_u,
     get_sim_millis,
-    parse_arm_frame,
-    parse_cutover_mode,
     parse_env_float,
     parse_gt_output_mode,
     parse_positive_float,
-    parse_sim_role,
-    parse_vec3,
     parse_vehicle_model,
 )
 from vehicle.quaternion import Quaternion
 from vehicle.world import World
-from vehicle.transfer_alignment import (
-    TransferAlignmentMasterLink,
-    TransferAlignmentSlaveLink,
-    quat_from_euler_deg_wxyz,
-    transform_master_to_slave_state,
-)
 from vehicle.vehicle_catalog import list_vehicle_models
 from visualizer.websockerPublisher import GroundTruthWebSocketPublisher
 from visualizer.flightgearUdpPublisher import FlightGearUdpPublisher
@@ -43,24 +33,11 @@ HEARTBEAT_INTERVAL_US = 1_000_000
 SYSTEM_TIME_INTERVAL_US = 1_000_000
 GPS_START_DELAY_US = 1_000_000
 MAVLINK_MSG_ID_HIL_STATE_QUATERNION = 115
-MAV_CMD_TRANSFER_CUTOVER = int(getattr(mavutil.mavlink, "MAV_CMD_USER_1", 31000))
 HIL_SENSOR_UPDATED_DIFF_PRESSURE_BIT = 1 << 10
 CHECK_FACTOR = 2
 
-SIM_ROLE = os.getenv("SIM_ROLE", "standalone").strip().lower()
 MAVLINK_BIND_HOST = os.getenv("SIM_MAVLINK_BIND_HOST", "0.0.0.0")
 MAVLINK_BIND_PORT = int(os.getenv("SIM_MAVLINK_BIND_PORT", "4560"))
-
-TRANSFER_UDP_TARGET_HOST = os.getenv("SIM_TRANSFER_UDP_TARGET_HOST", "127.0.0.1")
-TRANSFER_UDP_TARGET_PORT = int(os.getenv("SIM_TRANSFER_UDP_TARGET_PORT", "18000"))
-TRANSFER_UDP_BIND_HOST = os.getenv("SIM_TRANSFER_UDP_BIND_HOST", "0.0.0.0")
-TRANSFER_UDP_BIND_PORT = int(os.getenv("SIM_TRANSFER_UDP_BIND_PORT", "18000"))
-TRANSFER_ARM_M = os.getenv("SIM_TRANSFER_ARM_M", "0.0,0.0,0.0")
-TRANSFER_ARM_FRAME = os.getenv("SIM_TRANSFER_ARM_FRAME", "master_body").strip().lower()
-TRANSFER_REL_EULER_DEG = os.getenv("SIM_TRANSFER_REL_EULER_DEG", "0.0,0.0,0.0")
-TRANSFER_TIMEOUT_S = float(os.getenv("SIM_TRANSFER_TIMEOUT_S", "1.0"))
-TRANSFER_CUTOVER_MODE = os.getenv("SIM_TRANSFER_CUTOVER_MODE", "mavlink_cmd").strip().lower()
-TRANSFER_CUTOVER_TIME_S = float(os.getenv("SIM_TRANSFER_CUTOVER_TIME_S", "10.0"))
 
 GT_WS_HOST = os.getenv("SIM_GT_WS_HOST", "0.0.0.0")
 GT_WS_PORT = int(os.getenv("SIM_GT_WS_PORT", "8765"))
@@ -73,6 +50,11 @@ TS04_PITCH90_START = os.getenv("SIM_TS04_PITCH90_START", "1").strip().lower() in
 
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 logger = logging.getLogger(__name__)
+DEFAULT_GPS_ORIGIN = {
+    "lat": 0.0,
+    "lon": 0.0,
+    "alt": 0.0,
+}
 
 
 def ned_to_lla_from_origin(pos_ned_m: np.ndarray, lat_home_deg: float, lon_home_deg: float, alt_home_m: float) -> tuple[float, float, float]:
@@ -99,9 +81,6 @@ def ned_to_lla_from_origin(pos_ned_m: np.ndarray, lat_home_deg: float, lon_home_
 
 
 def simulation_main() -> None:
-    role = parse_sim_role(SIM_ROLE)
-    cutover_mode = parse_cutover_mode(TRANSFER_CUTOVER_MODE)
-    transfer_arm_frame = parse_arm_frame(TRANSFER_ARM_FRAME)
     gt_output_mode = parse_gt_output_mode(GT_OUTPUT_MODE)
     gt_output_rate_hz = parse_positive_float(GT_OUTPUT_RATE_HZ_RAW, "SIM_GT_OUTPUT_RATE_HZ")
     gt_output_interval_us = max(1, int(1e6 / gt_output_rate_hz))
@@ -112,7 +91,6 @@ def simulation_main() -> None:
     conn: Any = mavutil.mavlink_connection(mavlink_endpoint, source_component=51)
 
     logger.info("Waiting for Heartbeat ...")
-    logger.info("Running in role: %s", role)
     logger.info("Using vehicle model: %s", vehicle_model)
     first_hb = conn.wait_heartbeat()
     px4_sysid = first_hb.get_srcSystem()
@@ -137,10 +115,10 @@ def simulation_main() -> None:
     if catapult_enabled:
         logger.info("Catapult launch enabled with countdown %.1f s", catapult_countdown_s)
 
-    gps_origin = getattr(world.P, "gps_origin", {})
-    origin_lat_deg = float(gps_origin.get("lat", 48.35386539065191))
-    origin_lon_deg = float(gps_origin.get("lon", 11.78159133408772))
-    origin_alt_m = float(gps_origin.get("alt", 447.0))
+    gps_origin = getattr(world.P, "gps_origin", DEFAULT_GPS_ORIGIN)
+    origin_lat_deg = float(gps_origin.get("lat", DEFAULT_GPS_ORIGIN["lat"]))
+    origin_lon_deg = float(gps_origin.get("lon", DEFAULT_GPS_ORIGIN["lon"]))
+    origin_alt_m = float(gps_origin.get("alt", DEFAULT_GPS_ORIGIN["alt"]))
 
     gt_ws = GroundTruthWebSocketPublisher(host=GT_WS_HOST, port=GT_WS_PORT, enabled=(gt_output_mode == "websocket"))
     gt_ws.start()
@@ -153,43 +131,6 @@ def simulation_main() -> None:
     else:
         logger.info("External ground-truth output disabled")
     logger.info("Ground-truth output mode=%s rate=%.2f Hz", gt_output_mode, gt_output_rate_hz)
-
-    transfer_master_link: TransferAlignmentMasterLink | None = None
-    transfer_slave_link: TransferAlignmentSlaveLink | None = None
-
-    slave_arm_master_body_m = np.zeros(3)
-    slave_q_from_master = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
-    if role == "master":
-        transfer_master_link = TransferAlignmentMasterLink(
-            target_host=TRANSFER_UDP_TARGET_HOST,
-            target_port=TRANSFER_UDP_TARGET_PORT,
-        )
-        logger.info(
-            "Master transfer stream enabled: udp://%s:%s",
-            TRANSFER_UDP_TARGET_HOST,
-            TRANSFER_UDP_TARGET_PORT,
-        )
-    elif role == "slave":
-        transfer_slave_link = TransferAlignmentSlaveLink(
-            bind_host=TRANSFER_UDP_BIND_HOST,
-            bind_port=TRANSFER_UDP_BIND_PORT,
-            timeout_s=TRANSFER_TIMEOUT_S,
-        )
-        slave_arm_master_body_m = parse_vec3(TRANSFER_ARM_M, "SIM_TRANSFER_ARM_M")
-        rel_euler = parse_vec3(TRANSFER_REL_EULER_DEG, "SIM_TRANSFER_REL_EULER_DEG")
-        slave_q_from_master = quat_from_euler_deg_wxyz(rel_euler[0], rel_euler[1], rel_euler[2])
-        logger.info(
-            "Slave transfer input bound on udp://%s:%s",
-            TRANSFER_UDP_BIND_HOST,
-            TRANSFER_UDP_BIND_PORT,
-        )
-        logger.info(
-            "Slave transfer params: arm[m]=%s arm_frame=%s rel_euler[deg]=%s cutover_mode=%s",
-            slave_arm_master_body_m.tolist(),
-            transfer_arm_frame,
-            rel_euler.tolist(),
-            cutover_mode,
-        )
 
     sim_time_us = 0
     next_heartbeat_time_us = 0
@@ -206,13 +147,6 @@ def simulation_main() -> None:
     ever_armed = False
     last_rx_wall_s = time.time()
     next_rx_warn_wall_s = last_rx_wall_s + 2.0
-    next_transfer_warn_wall_s = last_rx_wall_s + 2.0
-
-    slave_coupled = role == "slave"
-    cutover_requested = False
-    cutover_time_us = int(max(0.0, TRANSFER_CUTOVER_TIME_S) * 1e6)
-    last_slave_transformed_state: tuple[np.ndarray, np.ndarray] | None = None
-    last_transfer_seq = -1
 
     logger.info("PX4 connected starting sim")
     try:
@@ -250,14 +184,6 @@ def simulation_main() -> None:
                                 logger.info("SIM <= set HIL_STATE_QUAT interval to %s us", hil_state_interval_us)
                             else:
                                 logger.info("SIM <= disable HIL_STATE_QUAT")
-                    elif (
-                        role == "slave"
-                        and slave_coupled
-                        and cutover_mode == "mavlink_cmd"
-                        and command == MAV_CMD_TRANSFER_CUTOVER
-                    ):
-                        cutover_requested = True
-                        logger.info("SIM <= transfer cutover command received")
 
             if armed and (not was_armed):
                 if catapult_enabled and catapult_countdown_us > 0:
@@ -291,77 +217,28 @@ def simulation_main() -> None:
             needs_to_pause = False
             now_ms = get_sim_millis(sim_time_us)
 
-            if slave_coupled:
-                packet = transfer_slave_link.poll_latest() if transfer_slave_link is not None else None
-                if transfer_slave_link is not None:
-                    master_endpoint = transfer_slave_link.consume_master_connected_endpoint()
-                    if master_endpoint is not None:
-                        logger.info(
-                            "SIM: transfer connection established to master udp://%s:%s",
-                            master_endpoint[0],
-                            master_endpoint[1],
-                        )
+            sim_time_us += DT_US
+            io_run_only = (slow_down_counter % CHECK_FACTOR) != 0
+            now_ms = get_sim_millis(sim_time_us)
+            needs_to_pause = (last_time_ran_ms == now_ms) or io_run_only
+            if catapult_countdown_active and catapult_release_time_us is not None:
+                if sim_time_us >= catapult_release_time_us:
+                    catapult_countdown_active = False
+                    catapult_release_time_us = None
+                    logger.info("SIM => Catapult launch release")
+                elif sim_time_us >= next_countdown_announce_us:
+                    remaining_s = max(0.0, (catapult_release_time_us - sim_time_us) / 1e6)
+                    logger.info("SIM => Catapult countdown: %.1f s", remaining_s)
+                    next_countdown_announce_us = sim_time_us + 1_000_000
 
-                if packet is None or packet.seq == last_transfer_seq:
-                    if transfer_slave_link is not None and transfer_slave_link.timed_out() and now_wall_s >= next_transfer_warn_wall_s:
-                        logger.warning("SIM: no master transfer packet for >%.1fs", TRANSFER_TIMEOUT_S)
-                        next_transfer_warn_wall_s = now_wall_s + 2.0
-                    slow_down_counter += 1
-                    time.sleep(1.0 / RATE_HZ)
-                    continue
+            freeze_for_countdown = catapult_enabled and catapult_countdown_active
+            world_out = world.update(
+                sim_time_us,
+                needs_to_pause,
+                freeze_dynamics=((not ever_armed) or freeze_for_countdown),
+            )
 
-                last_transfer_seq = int(packet.seq)
-                sim_time_us = int(packet.time_us)
-                now_ms = get_sim_millis(sim_time_us)
-
-                y_slave, ydot_slave = transform_master_to_slave_state(
-                    y_master=packet.y,
-                    ydot_master=packet.ydot,
-                    arm_m=slave_arm_master_body_m,
-                    q_slave_from_master_wxyz=slave_q_from_master,
-                    arm_frame=transfer_arm_frame,
-                )
-                world_out = world.observe_external_state(sim_time_us, y_slave, ydot_slave)
-                last_slave_transformed_state = (y_slave.copy(), ydot_slave.copy())
-
-                if cutover_mode == "time" and sim_time_us >= cutover_time_us:
-                    cutover_requested = True
-
-                if cutover_requested and last_slave_transformed_state is not None and cutover_mode != "never":
-                    world.set_state(last_slave_transformed_state[0])
-                    world.sync_time(sim_time_us)
-                    slave_coupled = False
-                    logger.info("SIM => transfer cutover at t=%.3fs, switching to local dynamics", sim_time_us / 1e6)
-
-            else:
-                sim_time_us += DT_US
-                io_run_only = (slow_down_counter % CHECK_FACTOR) != 0
-                now_ms = get_sim_millis(sim_time_us)
-                needs_to_pause = (last_time_ran_ms == now_ms) or io_run_only
-                if catapult_countdown_active and catapult_release_time_us is not None:
-                    if sim_time_us >= catapult_release_time_us:
-                        catapult_countdown_active = False
-                        catapult_release_time_us = None
-                        logger.info("SIM => Catapult launch release")
-                    elif sim_time_us >= next_countdown_announce_us:
-                        remaining_s = max(0.0, (catapult_release_time_us - sim_time_us) / 1e6)
-                        logger.info("SIM => Catapult countdown: %.1f s", remaining_s)
-                        next_countdown_announce_us = sim_time_us + 1_000_000
-
-                freeze_for_countdown = catapult_enabled and catapult_countdown_active
-                world_out = world.update(
-                    sim_time_us,
-                    needs_to_pause,
-                    freeze_dynamics=((not ever_armed) or freeze_for_countdown),
-                )
-
-                if role == "master" and (not needs_to_pause) and world_out is not None and transfer_master_link is not None:
-                    transfer_master_link.send(sim_time_us, world_out["y"], world_out["ydot"])
-                    connected_slaves = transfer_master_link.poll_new_slave_connections()
-                    for endpoint in connected_slaves:
-                        logger.info("SIM: transfer slave connected from udp://%s:%s", endpoint[0], endpoint[1])
-
-            should_publish = world_out is not None and ((not needs_to_pause) or slave_coupled)
+            should_publish = world_out is not None and (not needs_to_pause)
 
             if should_publish:
                 z = world_out["sensors"]
@@ -513,10 +390,6 @@ def simulation_main() -> None:
             slow_down_counter += 1
             time.sleep(1.0 / RATE_HZ)
     finally:
-        if transfer_master_link is not None:
-            transfer_master_link.close()
-        if transfer_slave_link is not None:
-            transfer_slave_link.close()
         gt_ws.stop()
         if fg_udp is not None:
             fg_udp.close()
