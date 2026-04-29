@@ -215,8 +215,8 @@ Communication of simulated sensor and state outputs to PX4 (and integration hook
                                           v
 +-------------------------------------------------------------------------+
 |                    px4-python-sitl (src/main.py)                        |
-| lockstep scheduler | role: standalone/master/slave | MAVLink endpoint   |
-+--------------------+-------------------------------+---------------------+
+| lockstep scheduler | single-instance runtime | MAVLink endpoint      |
++--------------------+-------------------------+-----------------------+
                      |
                      | controls_to_u()
                      v
@@ -251,13 +251,7 @@ Communication of simulated sensor and state outputs to PX4 (and integration hook
                                                           v
                                                         PX4 SITL
 
-                     +----------------------+
-                     | Transfer Alignment   |
-                     | uses y, ydot (truth) |
-                     +----------------------+
-                             ^
-                             |
-                     (from Dynamics6DOF)
+                     (ground-truth outputs from Dynamics6DOF/SensorSuite)
 \end{verbatim}
 
 \section{Sensor Models}
@@ -669,139 +663,6 @@ Catapult behavior is configured in each vehicle parameter class (not through env
 \end{itemize}
 If enabled, \texttt{World} starts in constrained rail mode and switches automatically to free 6DOF when rail distance exceeds \texttt{rail\_length}.
 
-\section{Transfer Alignment (External UDP Coupling)}
-\texttt{src/vehicle/transfer\_alignment.py} provides master/slave UDP transport with sequence-stamped state packets and a rigid-arm state transform from master body to slave body.
-
-\paragraph{Goal}
-The goal of transfer alignment is to initialize and drive the slave vehicle from master truth during the coupled phase, so both platforms stay kinematically consistent before cutover. This provides smooth handover to local slave dynamics without large transients in pose, velocity, or attitude rates.
-
-\subsubsection*{Readable Derivation}
-The transfer maps a master rigid-body state to a slave state attached through a fixed arm and fixed relative attitude.
-
-\paragraph{1) Frames and constants}
-Let superscript $M$ denote master, superscript $S$ denote slave, and subscript $w$ denote world (NED). The rigid arm vector $r_b^{M}$ is constant in master body coordinates. The relative orientation $q^{SM}$ (slave-from-master) is constant during coupling.
-In practice, small mounting misalignment can be represented as
-\begin{equation}
-q^{SM} = q_{nom}^{SM} \otimes \delta q, \quad \|\delta\theta\| \ll 1,
-\end{equation}
-where $q_{nom}^{SM}$ is the nominal calibration and $\delta q$ captures residual alignment error.
-Here $\otimes$ denotes quaternion multiplication (Hamilton product), i.e., composition of rotations.
-
-\paragraph{2) Slave pose from master pose}
-\begin{align}
-q^{M} &= \operatorname{norm}(y^{M}[3:7]), \qquad R_{Mw}=R(q^{M})^T, \\
-r_w &= R_{Mw}r_b^{M}, \\
-p^{S} &= p^{M} + r_w, \\
-q^{S} &= \operatorname{norm}(q^{SM}\otimes q^{M}).
-\end{align}
-Interpretation: rotate the rigid arm into world frame and add it to master position; compose attitudes with the fixed relative quaternion.
-
-\paragraph{3) Slave velocity from rigid-arm kinematics}
-\begin{align}
-\omega_w^{M} &= R_{Mw}\omega_b^{M}, \\
-v_w^{M} &= R_{Mw}v_b^{M}, \\
-v_w^{S} &= v_w^{M} + \omega_w^{M}\times r_w.
-\end{align}
-The extra term $\omega\times r$ is the velocity induced at the arm tip by body rotation.
-
-\paragraph{4) Slave acceleration from rigid-arm kinematics}
-\begin{align}
-a_w^{M} &= R_{Mw}(\dot{v}_b^{M}+\omega_b^{M}\times v_b^{M}), \\
-\alpha_w^{M} &= R_{Mw}\dot{\omega}_b^{M}, \\
-a_w^{S} &= a_w^{M} + \alpha_w^{M}\times r_w + \omega_w^{M}\times(\omega_w^{M}\times r_w).
-\end{align}
-The two arm terms are tangential acceleration $\alpha\times r$ and centripetal acceleration $\omega\times(\omega\times r)$.
-
-\paragraph{5) Dynamics-ready slave body derivatives}
-\begin{align}
-R_{Sw} &= R(q^{S}), \qquad R_{SM}=R(q^{SM}), \\
-v_b^{S} &= R_{Sw}v_w^{S}, \\
-\omega_b^{S} &= R_{SM}\omega_b^{M}, \\
-\dot{v}_b^{S} &= R_{Sw}a_w^{S} - \omega_b^{S}\times v_b^{S}, \\
-\dot{\omega}_b^{S} &= R_{SM}\dot{\omega}_b^{M}, \\
-\dot{q}^{S} &= \frac{1}{2}\Omega(\omega_b^{S})q^{S}.
-\end{align}
-These are exactly the quantities consumed by \texttt{world.observe\_external\_state(...)} in slave-coupled mode.
-
-\subsubsection*{Rigid Arm Assumptions}
-\begin{itemize}
-    \item The lever arm between master and slave is rigid and fixed in the master body frame.
-    \item There is no structural flex, no hinge, and no compliance in the coupling.
-    \item Slave translational kinematics are induced by master rotation exactly through rigid-body terms $\omega\times r$ and $\alpha\times r + \omega\times(\omega\times r)$.
-    \item Relative attitude $q^{SM}$ is constant during the coupled phase.
-\end{itemize}
-
-\subsubsection*{Flow chart}
-{\footnotesize
-\begin{verbatim}
-[Input] master truth packet: {seq, t_us, y^M, ydot^M}
-    |
-    v
-[Gate]  if packet missing OR seq unchanged:
-          keep previous slave-coupled state (no overwrite)
-    |
-    v
-[Core]  extract q^M, p^M, v_b^M, w_b^M, wdot_b^M
-    |
-    v
-[Map]   rigid-arm transform + relative attitude q^SM
-        -> p^S, q^S, v_w^S, a_w^S
-    |
-    v
-[Body]  convert to slave body derivatives
-        -> v_b^S, w_b^S, vdot_b^S, wdot_b^S, qdot^S
-    |
-    v
-[Output] world.observe_external_state(y^S, ydot^S)
-    |
-    v
-[Trigger check] cutover request?
-    - time mode: t_us >= cutover_time_us
-    - mavlink_cmd mode: command received
-    - never mode: stay coupled
-    |
-    +--> NO: continue slave-coupled overwrite from transfer packets
-    |
-    +--> YES: set world state to last transformed slave state,
-              sync sim time, switch to local slave dynamics
-
-Trigger: transfer packet arrival in slave-coupled mode.
-Rate:    follows master transfer publish cadence.
-Gate:    if no new packet (or duplicate seq), skip overwrite; after cutover,
-         use own slave dynamics path instead of transfer overwrite.
-\end{verbatim}
-}
-
-\subsubsection*{Cutover Trigger Modes and Configuration}
-Cutover logic is active in \texttt{SIM\_ROLE=slave}. The mode is selected with
-\texttt{SIM\_TRANSFER\_CUTOVER\_MODE} and supports exactly three values:
-\begin{itemize}
-    \item \texttt{never}: slave remains transfer-coupled forever; local slave dynamics are not entered automatically.
-    \item \texttt{time}: cutover occurs when simulated transfer time satisfies
-    \begin{equation}
-    t_{us} \ge \texttt{SIM\_TRANSFER\_CUTOVER\_TIME\_S} \cdot 10^6.
-    \end{equation}
-    \item \texttt{mavlink\_cmd}: cutover occurs when a \texttt{COMMAND\_LONG} with command id \texttt{MAV\_CMD\_TRANSFER\_CUTOVER} is received (implemented as \texttt{MAV\_CMD\_USER\_1}, default id 31000).
-\end{itemize}
-
-How to set:
-\begin{verbatim}
-# never cut over
-SIM_ROLE=slave
-SIM_TRANSFER_CUTOVER_MODE=never
-
-# time-based cutover at 12.5 s
-SIM_ROLE=slave
-SIM_TRANSFER_CUTOVER_MODE=time
-SIM_TRANSFER_CUTOVER_TIME_S=12.5
-
-# cutover by MAVLink command
-SIM_ROLE=slave
-SIM_TRANSFER_CUTOVER_MODE=mavlink_cmd
-\end{verbatim}
-
-After cutover (for \texttt{time} or \texttt{mavlink\_cmd}), the slave applies the last transformed state, synchronizes simulation time, and switches from transfer overwrite to its own local dynamics update path.
-
 \section{MAVLink and External Communication}
 \subsection{MAVLink Lockstep Bridge}
 \texttt{src/main.py} connects to PX4 via MAVLink (TCP endpoint), receives actuator commands, advances lockstep simulation, and publishes HIL messages:
@@ -890,11 +751,6 @@ Typical usage is to start the bridge and connect it to PX4 SITL over MAVLink.
 px4-python-sitl --help
 python src/main.py --help
 \end{verbatim}
-If using transfer alignment, start the dedicated script:
-\begin{verbatim}
-python src/vehicle/transfer_alignment.py --help
-\end{verbatim}
-
 \subsection{Interact from Python}
 You can import simulation modules and run/update components programmatically.
 \begin{verbatim}
@@ -913,7 +769,6 @@ print(out["sensors"])   # synthesized sensors
 \subsection{External Program Interfaces}
 \begin{itemize}
     \item MAVLink HIL I/O via \texttt{src/main.py}.
-    \item UDP transfer alignment via \texttt{src/transfer\_alignment.py}.
     \item Ground-truth WebSocket via \texttt{src/visualizer/websockerPublisher.py}.
 \end{itemize}
 

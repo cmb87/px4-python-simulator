@@ -114,21 +114,8 @@ class TS04Parameters:
 
         self.magnetic_ned = np.array([0.21523, 0.01, 0.43])
 
-        self.accel_bias = 0 * np.array([0.01, -0.01, 0.02])
-        self.gyro_bias = 0 * np.array([0.005, -0.003, 0.002])
-        self.mag_bias = 0 * np.array([0.001, 0.001, 0.001])
-        self.baro_bias = 0.5
-
-        self.accel_noise_std = 0.00000000001
-        self.gyro_noise_std = 0.00000000001
-        self.mag_noise_std = 0.000001
-        self.baro_noise_std = 0.01
-        self.diff_pressure_noise_std = 0.002
         self.has_airspeed_sensor = True
         self.pitot_axis_body = np.array([1.0, 0.0, 0.0], dtype=float)
-        self.diff_pressure_lpf_tau_s = 0.08
-        self.gps_pos_noise_std = 0.0001 * np.array([0.01, 0.01, 0.01])
-        self.gps_vel_noise_std = 0.0001 * np.array([0.01, 0.01, 0.01])
 
         self.gps_origin = {
             "lat": float(os.getenv("SIM_GPS_LAT", "48.35386539065191")),

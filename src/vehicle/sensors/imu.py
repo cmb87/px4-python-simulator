@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class ADIS16448IMU(SimComponentBase):
-    def __init__(self, gravity_vector=np.array([0, 0, -9.8068])):
+    def __init__(self):
         super().__init__()
         self.dt = 1.0 / 250.0
 
@@ -32,11 +32,11 @@ class ADIS16448IMU(SimComponentBase):
         self.enable_noise = True
 
         # Gravity vector (world frame)
-        self.gravity_vector = np.array(gravity_vector)
+        self.gravity_vector = np.array([0.0, 0.0, -9.81], dtype=float)
 
         # Bias initialization
-        self.gyro_bias = self.gyro_turn_on_bias_sigma * np.random.randn(3)
-        self.acc_bias = self.acc_turn_on_bias_sigma * np.random.randn(3)
+        self.gyro_bias = np.array([0.0, 0.0, 0.0], dtype=float)
+        self.acc_bias = np.array([0.0, 0.0, 0.0], dtype=float)
 
         # Random generator
         self.rng = np.random.default_rng()
@@ -50,6 +50,9 @@ class ADIS16448IMU(SimComponentBase):
 
     def set_noise(self, enabled: bool):
         self.enable_noise = bool(enabled)
+
+    def set_gravity(self, gravity_mps2: float):
+        self.gravity_vector = np.array([0.0, 0.0, -float(gravity_mps2)], dtype=float)
 
     def set_biases(self, accel_bias_mps2=None, gyro_bias_rps=None):
         if accel_bias_mps2 is not None:

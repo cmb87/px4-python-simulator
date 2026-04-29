@@ -19,9 +19,9 @@ class GpsSensor(SimComponentBase):
         self.enable_noise = True
 
         # Home position (radians, meters)
-        self.lat_home = math.radians(48.35386539065191)
-        self.lon_home = math.radians(11.78159133408772)
-        self.alt_home = 447.0
+        self.lat_home = 0.0
+        self.lon_home = 0.0
+        self.alt_home = 0.0
         self._earth_radius_m = 6371000.0
 
         # Noise parameters
@@ -164,7 +164,7 @@ if __name__ == "__main__":
     )
     gps = GpsSensor()
     gps.set_update_rate(10.0)  # 10 Hz
-    gps.set_home(48.35386539065191, 11.78159133408772, 447.0)
+    gps.set_home(0.0, 0.0, 0.0)
     gps.set_noise(True)
 
     # Simulate 5 steps of GPS output
