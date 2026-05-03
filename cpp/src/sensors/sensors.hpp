@@ -4,6 +4,7 @@
 #include <random>
 #include <map>
 #include <string>
+#include <cstdint>
 
 namespace sensors {
 
@@ -52,7 +53,8 @@ public:
 private:
     bool enable_noise = true;
     bool updated = false;
-    double time_since_last_update = 0.0;
+    uint64_t elapsed_us = 0;
+    uint64_t update_interval_us = 4000; // 250 Hz
     double update_interval = 1.0 / 20.0; // 20 Hz
     double home_altitude_amsl = 0.0;
     double pressure_hpa = 1013.25;
@@ -80,7 +82,8 @@ public:
 private:
     bool enable_noise = true;
     bool updated = false;
-    double time_since_last_update = 0.0;
+    uint64_t elapsed_us = 0;
+    uint64_t update_interval_us = 200000; // 5 Hz
     double update_interval = 1.0 / 5.0; // 5 Hz
     double lat_home, lon_home, alt_home;
     GpsData data;
