@@ -32,8 +32,8 @@ void IMUSensor::update(double dt, const Eigen::Vector3d& acc_body_rate, const Ei
     
     if (enable_noise) {
         const double dt_safe = std::max(dt, 1e-6);
-        const double gyro_noise_density = 2.0 * 35.0 / 3600.0 / 180.0 * M_PI;
-        const double acc_noise_density = 2.0 * 2.0e-3;
+        const double gyro_noise_density = 2.0 * 3.5 / 3600.0 / 180.0 * M_PI;
+        const double acc_noise_density = 2.0 * 2.0e-4;
         const double gyro_sigma = gyro_noise_density / std::sqrt(dt_safe);
         const double acc_sigma = acc_noise_density / std::sqrt(dt_safe);
 
@@ -71,8 +71,8 @@ void BarometerSensor::update(double dt, double alt_amsl) {
     double pressure_ratio = std::pow(ISA_TEMPERATURE_MSL_K / temperature, 5.256);
     double absolute_pressure = ISA_PRESSURE_MSL_PA / pressure_ratio;
 
-    double noise = enable_noise ? dist(gen) * 1.0 : 0.0;
-    pressure_drift_pa += pressure_drift_pa_per_sec * (static_cast<double>(step_us) * 1e-6);
+    double noise = enable_noise ? dist(gen) * 0.1 : 0.0;
+    pressure_drift_pa += (pressure_drift_pa_per_sec * 0.1) * (static_cast<double>(step_us) * 1e-6);
     double pressure_noisy = absolute_pressure + noise + pressure_drift_pa;
     
     pressure_hpa = pressure_noisy * 0.01;
@@ -108,10 +108,10 @@ void GPSSensor::update(double dt, const Eigen::Vector3d& pos_ned, const Eigen::V
     
     const double dt_safe = std::max(dt, 1e-6);
 
-    const double xy_noise_density = 2.0e-4;
-    const double z_noise_density = 4.0e-4;
-    const double vxy_noise_density = 0.2;
-    const double vz_noise_density = 0.4;
+    const double xy_noise_density = 2.0e-5;
+    const double z_noise_density = 4.0e-5;
+    const double vxy_noise_density = 0.02;
+    const double vz_noise_density = 0.04;
 
     Eigen::Vector3d noise_pos = Eigen::Vector3d::Zero();
     Eigen::Vector3d noise_vel = Eigen::Vector3d::Zero();
@@ -160,7 +160,7 @@ void MagnetometerSensor::update(double dt, const Eigen::Vector4d& quat, const Ei
     
     if (enable_noise) {
         Eigen::Vector3d noise(dist(gen), dist(gen), dist(gen));
-        mag_meas = mag_body + noise * 0.01;
+        mag_meas = mag_body + noise * 0.001;
     } else {
         mag_meas = mag_body;
     }
