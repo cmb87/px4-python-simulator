@@ -13,11 +13,72 @@
 
 using namespace std::chrono_literals;
 
+namespace {
+
+Eigen::Vector4d rail_alignment_quaternion_wxyz(const X8Parameters& params) {
+    Eigen::Vector3d rail_dir = params.rail_dir_ned;
+    double rail_norm = rail_dir.norm();
+    if (rail_norm <= 1e-9) {
+        return Eigen::Vector4d(1.0, 0.0, 0.0, 0.0);
+    }
+    rail_dir /= rail_norm;
+
+    double yaw = std::atan2(rail_dir[1], rail_dir[0]);
+    double horiz = std::hypot(rail_dir[0], rail_dir[1]);
+    double pitch = std::atan2(-rail_dir[2], std::max(horiz, 1e-9));
+
+    double cr = std::cos(0.0 * 0.5);
+    double sr = std::sin(0.0 * 0.5);
+    double cp = std::cos(pitch * 0.5);
+    double sp = std::sin(pitch * 0.5);
+    double cy = std::cos(yaw * 0.5);
+    double sy = std::sin(yaw * 0.5);
+
+    Eigen::Vector4d q;
+    q[0] = cr * cp * cy + sr * sp * sy;
+    q[1] = sr * cp * cy - cr * sp * sy;
+    q[2] = cr * sp * cy + sr * cp * sy;
+    q[3] = cr * cp * sy - sr * sp * cy;
+    return q;
+}
+
+Eigen::VectorXd rail_forces(const Eigen::VectorXd& y, const X8Parameters& params) {
+    Eigen::Vector3d rail_dir = params.rail_dir_ned;
+    double rail_norm = rail_dir.norm();
+    if (rail_norm <= 1e-9) {
+        return Eigen::VectorXd::Zero(6);
+    }
+    rail_dir /= rail_norm;
+
+    Eigen::Vector3d pos = y.segment<3>(0);
+    double rail_dist = (pos - params.rail_start_ned).dot(rail_dir);
+    double rail_force_ned = params.rail_pull_max * params.gravity * (params.rail_length - rail_dist);
+    if (rail_force_ned < 0.0) {
+        rail_force_ned = 0.0;
+    }
+
+    Eigen::Vector4d quat = rail_alignment_quaternion_wxyz(params);
+    Eigen::Matrix3d Mfg = dynamics::Mfg_from_quat(quat);
+    Eigen::Vector3d force_body = Mfg * (rail_force_ned * rail_dir);
+
+    Eigen::VectorXd out = Eigen::VectorXd::Zero(6);
+    out.segment<3>(0) = force_body;
+    return out;
+}
+
+}
+
 int main() {
     std::cout << "Starting C++ x8 Simulation..." << std::endl;
 
     X8Parameters params;
     dynamics::State state;
+    if (params.rail_launch_enabled) {
+        state.y.segment<3>(0) = params.rail_start_ned;
+        state.y.segment<4>(3) = rail_alignment_quaternion_wxyz(params);
+        state.y.segment<3>(10).setZero();
+        params.left_rail = false;
+    }
     Eigen::VectorXd u = Eigen::VectorXd::Zero(4);
     Eigen::Vector3d wind = Eigen::Vector3d::Zero();
     
@@ -35,6 +96,7 @@ int main() {
     networking::MavlinkInterface mav_interface;
     std::atomic<bool> controls_received{false};
     std::atomic<bool> armed{false};
+    std::atomic<bool> ever_armed{false};
     
     mav_interface.set_on_controls([&](const mavlink_hil_actuator_controls_t& controls) {
         u[0] = controls.controls[0]; // Throttle
@@ -43,6 +105,9 @@ int main() {
         u[3] = controls.controls[3]; 
         
         armed = (controls.mode & MAV_MODE_FLAG_SAFETY_ARMED) != 0;
+        if (armed) {
+            ever_armed = true;
+        }
         controls_received = true;
     });
 
@@ -86,29 +151,47 @@ int main() {
 
         // 1. Calculate forces
         Eigen::Vector3d wind_6d = Eigen::Vector3d::Zero();
-        Eigen::VectorXd tau = x8::forces(sim_time_us * 1e-6, state.y, u, wind_6d, params);
-
-        // 2. Integrate dynamics (RK4)
+        Eigen::VectorXd tau = Eigen::VectorXd::Zero(6);
+        Eigen::VectorXd ydot = Eigen::VectorXd::Zero(13);
         auto dynamics_func = [&](double t, const Eigen::VectorXd& y) {
             return dynamics::dynamics_6dof(t, y, params, tau);
         };
-        state.y = dynamics::IntegratorRK4::step(sim_time_us * 1e-6, dt, state.y, dynamics_func);
-        state.y.segment<4>(3).normalize();
 
-        // Ground constraint
-        if (state.y[2] >= 0.0) {
-            state.y[2] = 0.0;
-            Eigen::Matrix3d Mfg_tmp = dynamics::Mfg_from_quat(state.y.segment<4>(3));
-            Eigen::Matrix3d Mgf_tmp = Mfg_tmp.transpose();
-            Eigen::Vector3d vel_ned_tmp = Mgf_tmp * state.y.segment<3>(7);
-            if (vel_ned_tmp[2] > 0.0) {
-                vel_ned_tmp[2] = 0.0;
-                state.y.segment<3>(7) = Mfg_tmp * vel_ned_tmp;
+        if (ever_armed) {
+            tau = x8::forces(sim_time_us * 1e-6, state.y, u, wind_6d, params);
+            if (params.rail_launch_enabled && !params.left_rail) {
+                state.y.segment<4>(3) = rail_alignment_quaternion_wxyz(params);
+                state.y.segment<3>(10).setZero();
+                tau += rail_forces(state.y, params);
+                auto rail_func = [&](double t, const Eigen::VectorXd& y) {
+                    return dynamics::rail_dynamics(t, y, params, tau);
+                };
+                state.y = dynamics::IntegratorRK4::step(sim_time_us * 1e-6, dt, state.y, rail_func);
+                state.y.segment<4>(3) = rail_alignment_quaternion_wxyz(params);
+                state.y.segment<3>(10).setZero();
+            } else {
+                state.y = dynamics::IntegratorRK4::step(sim_time_us * 1e-6, dt, state.y, dynamics_func);
+                state.y.segment<4>(3).normalize();
+            }
+
+            // Ground constraint
+            if (state.y[2] >= 0.0) {
+                state.y[2] = 0.0;
+                Eigen::Matrix3d Mfg_tmp = dynamics::Mfg_from_quat(state.y.segment<4>(3));
+                Eigen::Matrix3d Mgf_tmp = Mfg_tmp.transpose();
+                Eigen::Vector3d vel_ned_tmp = Mgf_tmp * state.y.segment<3>(7);
+                if (vel_ned_tmp[2] > 0.0) {
+                    vel_ned_tmp[2] = 0.0;
+                    state.y.segment<3>(7) = Mfg_tmp * vel_ned_tmp;
+                }
+            }
+
+            if (params.rail_launch_enabled && !params.left_rail) {
+                ydot = dynamics::rail_dynamics((sim_time_us + dt_us) * 1e-6, state.y, params, tau);
+            } else {
+                ydot = dynamics_func((sim_time_us + dt_us) * 1e-6, state.y);
             }
         }
-
-        // Calculate ydot at the new state for sensors
-        Eigen::VectorXd ydot = dynamics_func((sim_time_us + dt_us) * 1e-6, state.y);
 
         sim_time_us += dt_us;
 
