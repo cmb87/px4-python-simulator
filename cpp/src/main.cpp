@@ -86,6 +86,12 @@ int main() {
     sensors::BarometerSensor baro;
     sensors::GPSSensor gps;
     sensors::MagnetometerSensor mag;
+
+    // Stable HIL profile by default.
+    imu.set_noise(false);
+    baro.set_noise(false);
+    gps.set_noise(false);
+    mag.set_noise(false);
     
     gps.set_home(params.gps_origin["lat"], params.gps_origin["lon"], params.gps_origin["alt"]);
     baro.set_home_altitude(params.gps_origin["alt"]);

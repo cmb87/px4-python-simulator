@@ -1,6 +1,7 @@
 #include "sensors.hpp"
 #include "../dynamics/dynamics.hpp"
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
 
 namespace sensors {
@@ -48,13 +49,14 @@ void IMUSensor::update(double dt, const Eigen::Vector3d& acc_body_rate, const Ei
 BarometerSensor::BarometerSensor() : gen(std::random_device{}()), dist(0.0, 1.0) {}
 
 void BarometerSensor::update(double dt, double alt_amsl) {
-    time_since_last_update += dt;
-    if (time_since_last_update < update_interval) {
+    const uint64_t step_us = static_cast<uint64_t>(std::llround(std::max(dt, 0.0) * 1e6));
+    elapsed_us += step_us;
+    if (elapsed_us < update_interval_us) {
         updated = false;
         return;
     }
     updated = true;
-    time_since_last_update = 0;
+    elapsed_us -= update_interval_us;
 
     const double ISA_TEMPERATURE_MSL_K = 288.15;
     const double ISA_PRESSURE_MSL_PA = 101325.0;
@@ -92,13 +94,14 @@ void GPSSensor::set_home(double lat_deg, double lon_deg, double alt_m) {
 }
 
 void GPSSensor::update(double dt, const Eigen::Vector3d& pos_ned, const Eigen::Vector3d& vel_ned) {
-    time_since_last_update += dt;
-    if (time_since_last_update < update_interval) {
+    const uint64_t step_us = static_cast<uint64_t>(std::llround(std::max(dt, 0.0) * 1e6));
+    elapsed_us += step_us;
+    if (elapsed_us < update_interval_us) {
         updated = false;
         return;
     }
     updated = true;
-    time_since_last_update = 0;
+    elapsed_us -= update_interval_us;
 
     const double R_EARTH = 6371000.0;
     
