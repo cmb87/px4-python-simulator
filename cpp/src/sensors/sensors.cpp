@@ -33,12 +33,12 @@ void IMUSensor::update(double dt, const Eigen::Vector3d& acc_body_rate, const Ei
         // Match Python ADIS16448IMU: white noise + first-order Gauss-Markov bias
         const double dt_safe = std::max(dt, 1e-6);
 
-        const double gyro_noise_density = 2.0 * 35.0 / 3600.0 / 180.0 * M_PI;
-        const double gyro_random_walk = 2.0 * 4.0 / 3600.0 / 180.0 * M_PI;
+        const double gyro_noise_density = 2.0 * 20.0 / 3600.0 / 180.0 * M_PI;
+        const double gyro_random_walk = 2.0 * 1.5 / 3600.0 / 180.0 * M_PI;
         const double gyro_bias_tau = 1.0e3;
 
-        const double acc_noise_density = 2.0 * 1.2e-3;
-        const double acc_random_walk = 2.0 * 1.5e-3;
+        const double acc_noise_density = 2.0 * 6.0e-4;
+        const double acc_random_walk = 2.0 * 6.0e-4;
         const double acc_bias_tau = 300.0;
 
         const double gyro_phi = std::exp(-dt_safe / gyro_bias_tau);
@@ -92,7 +92,7 @@ void BarometerSensor::update(double dt, double alt_amsl) {
     double pressure_ratio = std::pow(ISA_TEMPERATURE_MSL_K / temperature, 5.256);
     double absolute_pressure = ISA_PRESSURE_MSL_PA / pressure_ratio;
 
-    double noise = enable_noise ? dist(gen) * 0.35 : 0.0;
+    double noise = enable_noise ? dist(gen) * 0.10 : 0.0;
     double pressure_noisy = absolute_pressure + noise;
     
     pressure_hpa = pressure_noisy * 0.01;
