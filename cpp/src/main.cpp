@@ -207,6 +207,9 @@ int main() {
         mag.update(dt, state.y.segment<4>(3), params.magnetic_ned);
 
         auto gps_data = gps.get_data();
+        const double gps_vel_n = gps_data.vel[0];
+        const double gps_vel_e = gps_data.vel[1];
+        const double gps_vel_d = gps_data.vel[2];
 
         // Ground-truth LLA for State and WebSocket
         double gt_lat = params.gps_origin["lat"];
@@ -260,12 +263,12 @@ int main() {
         int32_t hil_state_interval = mav_interface.get_hil_state_interval_us();
         if (hil_state_interval > 0 && sim_time_us >= next_hil_state_time_us) {
             float q[4] = {(float)state.y[3], (float)state.y[4], (float)state.y[5], (float)state.y[6]};
-            float horiz_speed = std::sqrt(vel_ned[0]*vel_ned[0] + vel_ned[1]*vel_ned[1]);
+            float horiz_speed = std::sqrt(gps_vel_n * gps_vel_n + gps_vel_e * gps_vel_e);
             const double m_s2_to_mg = 1000.0 / 9.80665;
             mavlink_msg_hil_state_quaternion_pack(sysid, 51, &msg,
                 sim_time_us, q, state.y[10], state.y[11], state.y[12],
                 (int32_t)(gt_lat * 1e7), (int32_t)(gt_lon * 1e7), (int32_t)(gt_alt * 1000),
-                (int16_t)(vel_ned[0] * 100), (int16_t)(vel_ned[1] * 100), (int16_t)(vel_ned[2] * 100),
+                (int16_t)(gps_vel_n * 100), (int16_t)(gps_vel_e * 100), (int16_t)(gps_vel_d * 100),
                 (uint16_t)(horiz_speed * 100), (uint16_t)(horiz_speed * 100),
                 (int16_t)(acc[0] * m_s2_to_mg), (int16_t)(acc[1] * m_s2_to_mg), (int16_t)(acc[2] * m_s2_to_mg)
             );
@@ -274,14 +277,15 @@ int main() {
         }
 
         // HIL_GPS
-        if (gps.is_updated() || sim_time_us == dt_us) {
-            double cog_deg = std::atan2(vel_ned[1], vel_ned[0]) * 180.0 / M_PI;
+        if (gps.is_updated()) {
+            double cog_deg = std::atan2(gps_vel_e, gps_vel_n) * 180.0 / M_PI;
             if (cog_deg < 0) cog_deg += 360.0;
+            const double gps_speed_3d = std::sqrt(gps_vel_n * gps_vel_n + gps_vel_e * gps_vel_e + gps_vel_d * gps_vel_d);
             
             mavlink_msg_hil_gps_pack(sysid, 51, &msg,
                 sim_time_us, 3, (int32_t)(gps_data.lat * 1e7), (int32_t)(gps_data.lon * 1e7), (int32_t)(gps_data.alt * 1000),
-                100, 100, (uint16_t)(vel_ned.norm() * 100),
-                (int16_t)(vel_ned[0] * 100), (int16_t)(vel_ned[1] * 100), (int16_t)(vel_ned[2] * 100),
+                100, 100, (uint16_t)(gps_speed_3d * 100),
+                (int16_t)(gps_vel_n * 100), (int16_t)(gps_vel_e * 100), (int16_t)(gps_vel_d * 100),
                 (uint16_t)(cog_deg * 100), 10, 0, 0
             );
             mav_interface.send_message(msg);
