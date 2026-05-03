@@ -150,7 +150,7 @@ int main() {
         auto step_start_time = std::chrono::steady_clock::now();
 
         // 1. Calculate forces
-        Eigen::Vector3d wind_6d = Eigen::Vector3d::Zero();
+        Eigen::Matrix<double, 6, 1> wind_6d = Eigen::Matrix<double, 6, 1>::Zero();
         Eigen::VectorXd tau = Eigen::VectorXd::Zero(6);
         Eigen::VectorXd ydot = Eigen::VectorXd::Zero(13);
         auto dynamics_func = [&](double t, const Eigen::VectorXd& y) {
