@@ -4,7 +4,7 @@
 
 namespace x8 {
 
-Eigen::Matrix3d Rzyx_transpose(double phi, double theta, double psi) {
+Eigen::Matrix3d Rzyx(double phi, double theta, double psi) {
     double cphi = std::cos(phi);
     double sphi = std::sin(phi);
     double ctheta = std::cos(theta);
@@ -16,7 +16,7 @@ Eigen::Matrix3d Rzyx_transpose(double phi, double theta, double psi) {
     R << ctheta * cpsi, ctheta * spsi, -stheta,
          sphi * stheta * cpsi - cphi * spsi, sphi * stheta * spsi + cphi * cpsi, sphi * ctheta,
          cphi * stheta * cpsi + sphi * spsi, cphi * stheta * spsi - sphi * cpsi, cphi * ctheta;
-    return R.transpose();
+    return R;
 }
 
 Eigen::VectorXd forces(double t, const Eigen::VectorXd& y, const Eigen::VectorXd& u, const Eigen::Vector3d& wind, const X8Parameters& P) {
@@ -85,7 +85,7 @@ Eigen::VectorXd forces(double t, const Eigen::VectorXd& y, const Eigen::VectorXd
         f_lift_s = 0.0;
     }
 
-    Eigen::Matrix3d R_aero_to_body = Rzyx_transpose(0, alpha, beta).transpose(); 
+    Eigen::Matrix3d R_aero_to_body = Rzyx(0, alpha, beta).transpose();
     Eigen::Vector3d f_aero = R_aero_to_body * Eigen::Vector3d(-f_drag_s, f_y, -f_lift_s);
     Eigen::Vector3d t_aero(l, m, n);
 
