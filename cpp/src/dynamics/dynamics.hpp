@@ -8,7 +8,7 @@ namespace dynamics {
 Eigen::Matrix4d MOmega(const Eigen::Vector3d& Omega);
 Eigen::Matrix3d Mfg_from_quat(const Eigen::Vector4d& q);
 Eigen::VectorXd dynamics_6dof(double t, const Eigen::VectorXd& y, const X8Parameters& P, const Eigen::VectorXd& tau);
-Eigen::VectorXd rail_dynamics(double t, const Eigen::VectorXd& y, const X8Parameters& P, const Eigen::VectorXd& tau);
+Eigen::VectorXd rail_dynamics(double t, const Eigen::VectorXd& y, X8Parameters& P, const Eigen::VectorXd& tau);
 
 struct State {
     Eigen::VectorXd y;
