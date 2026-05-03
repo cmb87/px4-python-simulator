@@ -54,11 +54,12 @@ private:
     bool enable_noise = true;
     bool updated = false;
     uint64_t elapsed_us = 0;
-    uint64_t update_interval_us = 4000; // 250 Hz
-    double update_interval = 1.0 / 20.0; // 20 Hz
+    uint64_t update_interval_us = 50000; // 20 Hz
     double home_altitude_amsl = 0.0;
     double pressure_hpa = 1013.25;
     double pressure_altitude = 0.0;
+    double pressure_drift_pa_per_sec = 0.05;
+    double pressure_drift_pa = 0.0;
     std::mt19937 gen;
     std::normal_distribution<double> dist;
 };

@@ -72,14 +72,15 @@ void BarometerSensor::update(double dt, double alt_amsl) {
     double absolute_pressure = ISA_PRESSURE_MSL_PA / pressure_ratio;
 
     double noise = enable_noise ? dist(gen) * 1.0 : 0.0;
-    double pressure_noisy = absolute_pressure + noise;
+    pressure_drift_pa += pressure_drift_pa_per_sec * (static_cast<double>(step_us) * 1e-6);
+    double pressure_noisy = absolute_pressure + noise + pressure_drift_pa;
     
     pressure_hpa = pressure_noisy * 0.01;
 
     // pressure altitude (approximate, using density ratio)
     double density_ratio = std::pow(ISA_TEMPERATURE_MSL_K / temperature, 4.256);
     double air_density = ISA_AIR_DENSITY_MSL_KGPM3 / density_ratio;
-    pressure_altitude = alt_amsl - noise / (GRAVITY * air_density);
+    pressure_altitude = alt_amsl - (noise + pressure_drift_pa) / (GRAVITY * air_density);
 }
 
 // --- GPS ---
