@@ -32,8 +32,8 @@ void IMUSensor::update(double dt, const Eigen::Vector3d& acc_body_rate, const Ei
     
     if (enable_noise) {
         const double dt_safe = std::max(dt, 1e-6);
-        const double gyro_noise_density = 2.0 * 8.0 / 3600.0 / 180.0 * M_PI;
-        const double acc_noise_density = 2.0 * 1.5e-4;
+        const double gyro_noise_density = 2.0 * 35.0 / 3600.0 / 180.0 * M_PI;
+        const double acc_noise_density = 2.0 * 2.0e-3;
         const double gyro_sigma = gyro_noise_density / std::sqrt(dt_safe);
         const double acc_sigma = acc_noise_density / std::sqrt(dt_safe);
 
@@ -71,7 +71,7 @@ void BarometerSensor::update(double dt, double alt_amsl) {
     double pressure_ratio = std::pow(ISA_TEMPERATURE_MSL_K / temperature, 5.256);
     double absolute_pressure = ISA_PRESSURE_MSL_PA / pressure_ratio;
 
-    double noise = enable_noise ? dist(gen) * 0.03 : 0.0;
+    double noise = enable_noise ? dist(gen) * 1.0 : 0.0;
     double pressure_noisy = absolute_pressure + noise;
     
     pressure_hpa = pressure_noisy * 0.01;
@@ -109,8 +109,8 @@ void GPSSensor::update(double dt, const Eigen::Vector3d& pos_ned, const Eigen::V
 
     const double xy_noise_density = 2.0e-4;
     const double z_noise_density = 4.0e-4;
-    const double vxy_noise_density = 0.05;
-    const double vz_noise_density = 0.02;
+    const double vxy_noise_density = 0.2;
+    const double vz_noise_density = 0.4;
 
     Eigen::Vector3d noise_pos = Eigen::Vector3d::Zero();
     Eigen::Vector3d noise_vel = Eigen::Vector3d::Zero();

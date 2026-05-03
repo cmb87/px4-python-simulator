@@ -87,11 +87,11 @@ int main() {
     sensors::GPSSensor gps;
     sensors::MagnetometerSensor mag;
 
-    // Stable HIL profile by default.
-    imu.set_noise(false);
-    baro.set_noise(false);
-    gps.set_noise(false);
-    mag.set_noise(false);
+    // Match Python behavior: all sensors include noise.
+    imu.set_noise(true);
+    baro.set_noise(true);
+    gps.set_noise(true);
+    mag.set_noise(true);
     
     gps.set_home(params.gps_origin["lat"], params.gps_origin["lon"], params.gps_origin["alt"]);
     baro.set_home_altitude(params.gps_origin["alt"]);
@@ -292,17 +292,6 @@ int main() {
                 (uint16_t)(cog_deg * 100), 10, 0, 0
             );
             mav_interface.send_message(msg);
-        }
-
-        static uint64_t next_debug_print_us = 0;
-        if (sim_time_us >= next_debug_print_us) {
-            std::cout << "DBG t_us=" << sim_time_us
-                      << " acc_z=" << acc[2]
-                      << " baro_alt=" << baro.get_altitude()
-                      << " gps_v_up=" << gps_vel_up
-                      << " gps_v_down_sent=" << gps_vel_d
-                      << std::endl;
-            next_debug_print_us = sim_time_us + 500000;
         }
 
         // Periodic HEARTBEAT (every 1s sim time)
