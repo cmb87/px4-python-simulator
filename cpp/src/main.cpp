@@ -130,9 +130,10 @@ int main() {
         std::this_thread::sleep_for(10ms);
     }
     
-    uint8_t sysid = mav_interface.get_target_system();
-    mav_interface.set_source_system(sysid);
-    std::cout << "PX4 detected! SYSID=" << (int)sysid << ". Starting simulation loop." << std::endl;
+    uint8_t px4_sysid = mav_interface.get_target_system();
+    const uint8_t sim_sysid = 42;
+    mav_interface.set_source_system(sim_sysid);
+    std::cout << "PX4 detected! SYSID=" << (int)px4_sysid << ". Starting simulation loop." << std::endl;
 
     uint64_t sim_time_us = 0;
     const double dt = 0.004; // 250 Hz
@@ -254,7 +255,7 @@ int main() {
                 fields_updated &= ~(1u << 10);
             }
 
-            mavlink_msg_hil_sensor_pack(sysid, 51, &msg,
+            mavlink_msg_hil_sensor_pack(sim_sysid, 51, &msg,
                 sim_time_us,
                 acc[0], acc[1], acc[2],
                 gyro[0], gyro[1], gyro[2],
@@ -271,7 +272,7 @@ int main() {
             float q[4] = {(float)state.y[3], (float)state.y[4], (float)state.y[5], (float)state.y[6]};
             float horiz_speed = std::sqrt(gps_vel_n * gps_vel_n + gps_vel_e * gps_vel_e);
             const double m_s2_to_mg = 1000.0 / 9.80665;
-            mavlink_msg_hil_state_quaternion_pack(sysid, 51, &msg,
+            mavlink_msg_hil_state_quaternion_pack(sim_sysid, 51, &msg,
                 sim_time_us, q, state.y[10], state.y[11], state.y[12],
                 (int32_t)(gt_lat * 1e7), (int32_t)(gt_lon * 1e7), (int32_t)(gt_alt * 1000),
                 (int16_t)(gps_vel_n * 100), (int16_t)(gps_vel_e * 100), (int16_t)(gps_vel_d * 100),
@@ -288,7 +289,7 @@ int main() {
             if (cog_deg < 0) cog_deg += 360.0;
             const double gps_speed_3d = std::sqrt(gps_vel_n * gps_vel_n + gps_vel_e * gps_vel_e + gps_vel_d * gps_vel_d);
             
-            mavlink_msg_hil_gps_pack(sysid, 51, &msg,
+            mavlink_msg_hil_gps_pack(sim_sysid, 51, &msg,
                 sim_time_us, 3, (int32_t)(gps_data.lat * 1e7), (int32_t)(gps_data.lon * 1e7), (int32_t)(gps_data.alt * 1000),
                 100, 100, (uint16_t)(gps_speed_3d * 100),
                 (int16_t)(gps_vel_n * 100), (int16_t)(gps_vel_e * 100), (int16_t)(gps_vel_d * 100),
@@ -299,7 +300,7 @@ int main() {
 
         // Periodic HEARTBEAT (every 1s sim time)
         if (sim_time_us >= last_heartbeat_time_us + 1000000) {
-            mavlink_msg_heartbeat_pack(sysid, 51, &msg, MAV_TYPE_GENERIC, MAV_AUTOPILOT_INVALID, 0, 0, MAV_STATE_ACTIVE);
+            mavlink_msg_heartbeat_pack(sim_sysid, 51, &msg, MAV_TYPE_GENERIC, MAV_AUTOPILOT_INVALID, 0, 0, MAV_STATE_ACTIVE);
             mav_interface.send_message(msg);
             last_heartbeat_time_us = sim_time_us;
         }
@@ -307,7 +308,7 @@ int main() {
         // Periodic SYSTEM_TIME (every 1s sim time)
         if (sim_time_us >= last_system_time_us + 1000000) {
             uint64_t unix_time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-            mavlink_msg_system_time_pack(sysid, 51, &msg, unix_time, sim_time_us / 1000);
+            mavlink_msg_system_time_pack(sim_sysid, 51, &msg, unix_time, sim_time_us / 1000);
             mav_interface.send_message(msg);
             last_system_time_us = sim_time_us;
         }
@@ -323,7 +324,7 @@ int main() {
             }
 
             nlohmann::json j;
-            j["system_id"] = (int)sysid;
+            j["system_id"] = (int)sim_sysid;
             j["time_usec"] = sim_time_us;
             j["u"] = {u[0], u[1], u[2], u[3], 0.0, 0.0, 0.0, 0.0}; 
             j["position_ned_m"] = {state.y[0], state.y[1], state.y[2]};
