@@ -245,13 +245,28 @@ int main() {
         
         // HIL_SENSOR
         if (publish_this_step) {
-            uint32_t fields_updated = 0x1FFF;
+            uint32_t fields_updated = 0;
+            fields_updated |= (1u << 0);  // XACC
+            fields_updated |= (1u << 1);  // YACC
+            fields_updated |= (1u << 2);  // ZACC
+            fields_updated |= (1u << 3);  // XGYRO
+            fields_updated |= (1u << 4);  // YGYRO
+            fields_updated |= (1u << 5);  // ZGYRO
+            fields_updated |= (1u << 6);  // XMAG
+            fields_updated |= (1u << 7);  // YMAG
+            fields_updated |= (1u << 8);  // ZMAG
+
             double diff_pressure_pa = 0.0;
             if (params.has_airspeed_sensor) {
                 double va = state.y.segment<3>(7).norm();
                 diff_pressure_pa = 0.5 * params.rho * va * va;
-            } else {
-                fields_updated &= ~(1 << 10);
+                fields_updated |= (1u << 10); // DIFF_PRESSURE
+            }
+
+            if (baro.is_updated()) {
+                fields_updated |= (1u << 9);   // ABS_PRESSURE
+                fields_updated |= (1u << 11);  // PRESSURE_ALT
+                fields_updated |= (1u << 12);  // TEMPERATURE
             }
 
             mavlink_msg_hil_sensor_pack(sysid, 51, &msg,
