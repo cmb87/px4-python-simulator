@@ -78,7 +78,7 @@ Eigen::VectorXd dynamics_6dof(double t, const Eigen::VectorXd& y, const X8Parame
     return xdot;
 }
 
-Eigen::VectorXd rail_dynamics(double t, const Eigen::VectorXd& y, const X8Parameters& P, const Eigen::VectorXd& tau) {
+Eigen::VectorXd rail_dynamics(double t, const Eigen::VectorXd& y, X8Parameters& P, const Eigen::VectorXd& tau) {
     Eigen::Vector4d quat = y.segment<4>(3);
     Eigen::Vector3d vel = y.segment<3>(7);
 
@@ -98,6 +98,13 @@ Eigen::VectorXd rail_dynamics(double t, const Eigen::VectorXd& y, const X8Parame
 
     Eigen::Vector3d rail_dir_body = Mfg * rail_dir_ned;
     Eigen::Vector3d accel_body = accel_body_raw.dot(rail_dir_body) * rail_dir_body;
+
+    Eigen::Vector3d pos = y.segment<3>(0);
+    Eigen::Vector3d rel_pos = pos - P.rail_start_ned;
+    double rail_dist = rel_pos.dot(rail_dir_ned);
+    if (rail_dist >= P.rail_length) {
+        P.left_rail = true;
+    }
 
     Eigen::VectorXd xdot = Eigen::VectorXd::Zero(13);
     xdot.segment<3>(0) = vel_rail_ned;

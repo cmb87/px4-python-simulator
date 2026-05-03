@@ -1,5 +1,6 @@
 #include "sensors.hpp"
 #include "../dynamics/dynamics.hpp"
+#include <algorithm>
 #include <cmath>
 
 namespace sensors {
@@ -29,11 +30,15 @@ void IMUSensor::update(double dt, const Eigen::Vector3d& acc_body_rate, const Ei
     }
     
     if (enable_noise) {
-        // Noise standard deviations matched to Python's sqrt(dt) scaling
-        // Python: sigma_d = density / sqrt(dt). 
-        // Here we just use a simplified RMS noise for now, but 0.3 for acc is closer to reality at 250Hz.
-        acc_meas = acc_lpf_state + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * 0.3; 
-        gyro_meas = gyro_lpf_state + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * 0.01;
+        // Match Python IMU white-noise scaling: sigma_d = density / sqrt(dt)
+        const double dt_safe = std::max(dt, 1e-6);
+        const double acc_noise_density = 2.0 * 2.0e-3;
+        const double gyro_noise_density = 2.0 * 35.0 / 3600.0 / 180.0 * M_PI;
+        const double acc_sigma = acc_noise_density / std::sqrt(dt_safe);
+        const double gyro_sigma = gyro_noise_density / std::sqrt(dt_safe);
+
+        acc_meas = acc_lpf_state + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * acc_sigma;
+        gyro_meas = gyro_lpf_state + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * gyro_sigma;
     } else {
         acc_meas = acc_lpf_state;
         gyro_meas = gyro_lpf_state;
