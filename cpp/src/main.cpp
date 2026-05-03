@@ -142,7 +142,6 @@ int main() {
     auto last_heartbeat_time_us = sim_time_us;
     auto last_system_time_us = sim_time_us;
     uint64_t next_hil_state_time_us = 0;
-    uint64_t loop_counter = 0;
 
     while (true) {
         if (!mav_interface.is_running()) {
@@ -197,8 +196,6 @@ int main() {
         }
 
         sim_time_us += dt_us;
-        loop_counter++;
-        const bool publish_this_step = (loop_counter % 2) == 0;
 
         // 3. Update sensors
         Eigen::Matrix3d Mfg = dynamics::Mfg_from_quat(state.y.segment<4>(3));
@@ -244,7 +241,7 @@ int main() {
         auto mag_val = mag.get_mag();
         
         // HIL_SENSOR
-        if (publish_this_step) {
+        {
             uint32_t fields_updated = 0;
             fields_updated |= (1u << 0);  // XACC
             fields_updated |= (1u << 1);  // YACC
@@ -282,7 +279,7 @@ int main() {
 
         // HIL_STATE_QUATERNION
         int32_t hil_state_interval = mav_interface.get_hil_state_interval_us();
-        if (publish_this_step && hil_state_interval > 0 && sim_time_us >= next_hil_state_time_us) {
+        if (hil_state_interval > 0 && sim_time_us >= next_hil_state_time_us) {
             float q[4] = {(float)state.y[3], (float)state.y[4], (float)state.y[5], (float)state.y[6]};
             float horiz_speed = std::sqrt(gps_vel_n * gps_vel_n + gps_vel_e * gps_vel_e);
             const double m_s2_to_mg = 1000.0 / 9.80665;
@@ -298,7 +295,7 @@ int main() {
         }
 
         // HIL_GPS
-        if (publish_this_step && sim_time_us >= gps_start_time_us && gps.is_updated()) {
+        if (sim_time_us >= gps_start_time_us && gps.is_updated()) {
             double cog_deg = std::atan2(gps_vel_e, gps_vel_n) * 180.0 / M_PI;
             if (cog_deg < 0) cog_deg += 360.0;
             const double gps_speed_3d = std::sqrt(gps_vel_n * gps_vel_n + gps_vel_e * gps_vel_e + gps_vel_d * gps_vel_d);
