@@ -30,18 +30,40 @@ void IMUSensor::update(double dt, const Eigen::Vector3d& acc_body_rate, const Ei
     }
     
     if (enable_noise) {
-        // Match Python IMU white-noise scaling: sigma_d = density / sqrt(dt)
+        // Match Python ADIS16448IMU: white noise + first-order Gauss-Markov bias
         const double dt_safe = std::max(dt, 1e-6);
-        const double acc_noise_density = 2.0 * 2.0e-3;
-        const double gyro_noise_density = 2.0 * 35.0 / 3600.0 / 180.0 * M_PI;
-        const double acc_sigma = acc_noise_density / std::sqrt(dt_safe);
-        const double gyro_sigma = gyro_noise_density / std::sqrt(dt_safe);
 
-        acc_meas = acc_lpf_state + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * acc_sigma;
-        gyro_meas = gyro_lpf_state + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * gyro_sigma;
+        const double gyro_noise_density = 2.0 * 35.0 / 3600.0 / 180.0 * M_PI;
+        const double gyro_random_walk = 2.0 * 4.0 / 3600.0 / 180.0 * M_PI;
+        const double gyro_bias_tau = 1.0e3;
+
+        const double acc_noise_density = 2.0 * 2.0e-3;
+        const double acc_random_walk = 2.0 * 3.0e-3;
+        const double acc_bias_tau = 300.0;
+
+        const double gyro_phi = std::exp(-dt_safe / gyro_bias_tau);
+        const double acc_phi = std::exp(-dt_safe / acc_bias_tau);
+
+        const double gyro_sigma_b = std::sqrt(
+            -gyro_random_walk * gyro_random_walk * gyro_bias_tau / 2.0
+            * (std::exp(-2.0 * dt_safe / gyro_bias_tau) - 1.0)
+        );
+        const double acc_sigma_b = std::sqrt(
+            -acc_random_walk * acc_random_walk * acc_bias_tau / 2.0
+            * (std::exp(-2.0 * dt_safe / acc_bias_tau) - 1.0)
+        );
+
+        const double gyro_sigma_d = gyro_noise_density / std::sqrt(dt_safe);
+        const double acc_sigma_d = acc_noise_density / std::sqrt(dt_safe);
+
+        gyro_bias = gyro_phi * gyro_bias + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * gyro_sigma_b;
+        acc_bias = acc_phi * acc_bias + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * acc_sigma_b;
+
+        gyro_meas = gyro_lpf_state + gyro_bias + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * gyro_sigma_d;
+        acc_meas = acc_lpf_state + acc_bias + Eigen::Vector3d(dist(gen), dist(gen), dist(gen)) * acc_sigma_d;
     } else {
-        acc_meas = acc_lpf_state;
-        gyro_meas = gyro_lpf_state;
+        acc_meas = acc_lpf_state + acc_bias;
+        gyro_meas = gyro_lpf_state + gyro_bias;
     }
 }
 
@@ -103,14 +125,41 @@ void GPSSensor::update(double dt, const Eigen::Vector3d& pos_ned, const Eigen::V
 
     const double R_EARTH = 6371000.0;
     
+    const double dt_safe = std::max(dt, 1e-6);
+
+    const double xy_noise_density = 2.0e-4;
+    const double z_noise_density = 4.0e-4;
+    const double vxy_noise_density = 0.2;
+    const double vz_noise_density = 0.4;
+    const double xy_random_walk = 2.0;
+    const double z_random_walk = 4.0;
+    const double correlation_time = 60.0;
+
     Eigen::Vector3d noise_pos = Eigen::Vector3d::Zero();
     Eigen::Vector3d noise_vel = Eigen::Vector3d::Zero();
+    Eigen::Vector3d random_walk = Eigen::Vector3d::Zero();
     if (enable_noise) {
-        noise_pos << dist(gen)*0.5, dist(gen)*0.5, dist(gen)*1.0;
-        noise_vel << dist(gen)*0.1, dist(gen)*0.1, dist(gen)*0.2;
+        noise_pos <<
+            xy_noise_density * std::sqrt(dt_safe) * dist(gen),
+            xy_noise_density * std::sqrt(dt_safe) * dist(gen),
+            z_noise_density * std::sqrt(dt_safe) * dist(gen);
+
+        noise_vel <<
+            vxy_noise_density * std::sqrt(dt_safe) * dist(gen),
+            vxy_noise_density * std::sqrt(dt_safe) * dist(gen),
+            vz_noise_density * std::sqrt(dt_safe) * dist(gen);
+
+        random_walk <<
+            xy_random_walk * std::sqrt(dt_safe) * dist(gen),
+            xy_random_walk * std::sqrt(dt_safe) * dist(gen),
+            z_random_walk * std::sqrt(dt_safe) * dist(gen);
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        bias[i] += random_walk[i] * dt_safe - bias[i] / correlation_time;
     }
     
-    Eigen::Vector3d noisy_pos = pos_ned + noise_pos;
+    Eigen::Vector3d noisy_pos = pos_ned + noise_pos + bias;
     data.vel = vel_ned + noise_vel;
     
     // Reproject pos_ned to lat/lon
