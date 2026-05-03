@@ -127,12 +127,7 @@ int main() {
     // --- EXACT PYTHON SEQUENCE: WAIT FOR FIRST HEARTBEAT ---
     std::cout << "Waiting for MAVLink heartbeat from PX4..." << std::endl;
     while (!mav_interface.has_target()) {
-        mavlink_message_t msg;
-        // In Python it actually doesn't send anything here, just waits.
-        // But let's send one just in case.
-        mavlink_msg_heartbeat_pack(1, 51, &msg, MAV_TYPE_GENERIC, MAV_AUTOPILOT_INVALID, 0, 0, MAV_STATE_ACTIVE);
-        mav_interface.send_message(msg);
-        std::this_thread::sleep_for(1s);
+        std::this_thread::sleep_for(10ms);
     }
     
     uint8_t sysid = mav_interface.get_target_system();
@@ -142,6 +137,7 @@ int main() {
     uint64_t sim_time_us = 0;
     const double dt = 0.004; // 250 Hz
     const uint64_t dt_us = 4000;
+    const uint64_t gps_start_time_us = 1000000;
 
     auto last_heartbeat_time_us = sim_time_us;
     auto last_system_time_us = sim_time_us;
@@ -283,7 +279,7 @@ int main() {
         }
 
         // HIL_GPS
-        if (gps.is_updated()) {
+        if (sim_time_us >= gps_start_time_us && gps.is_updated()) {
             double cog_deg = std::atan2(gps_vel_e, gps_vel_n) * 180.0 / M_PI;
             if (cog_deg < 0) cog_deg += 360.0;
             const double gps_speed_3d = std::sqrt(gps_vel_n * gps_vel_n + gps_vel_e * gps_vel_e + gps_vel_d * gps_vel_d);
