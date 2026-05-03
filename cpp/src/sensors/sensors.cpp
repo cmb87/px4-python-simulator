@@ -129,6 +129,8 @@ void GPSSensor::update(double dt, const Eigen::Vector3d& pos_ned, const Eigen::V
 
     Eigen::Vector3d noisy_pos = pos_ned + noise_pos;
     data.vel = vel_ned + noise_vel;
+    // Match Python semantics: store vertical velocity as UP in index 2.
+    data.vel[2] = -data.vel[2];
     
     // Reproject pos_ned to lat/lon
     double x_rad = noisy_pos[0] / R_EARTH;

@@ -211,7 +211,8 @@ int main() {
         auto gps_data = gps.get_data();
         const double gps_vel_n = gps_data.vel[0];
         const double gps_vel_e = gps_data.vel[1];
-        const double gps_vel_d = gps_data.vel[2];
+        const double gps_vel_up = gps_data.vel[2];
+        const double gps_vel_d = -gps_vel_up;
 
         // Ground-truth LLA for State and WebSocket
         double gt_lat = params.gps_origin["lat"];
@@ -291,6 +292,17 @@ int main() {
                 (uint16_t)(cog_deg * 100), 10, 0, 0
             );
             mav_interface.send_message(msg);
+        }
+
+        static uint64_t next_debug_print_us = 0;
+        if (sim_time_us >= next_debug_print_us) {
+            std::cout << "DBG t_us=" << sim_time_us
+                      << " acc_z=" << acc[2]
+                      << " baro_alt=" << baro.get_altitude()
+                      << " gps_v_up=" << gps_vel_up
+                      << " gps_v_down_sent=" << gps_vel_d
+                      << std::endl;
+            next_debug_print_us = sim_time_us + 500000;
         }
 
         // Periodic HEARTBEAT (every 1s sim time)
