@@ -37,8 +37,8 @@ void IMUSensor::update(double dt, const Eigen::Vector3d& acc_body_rate, const Ei
         const double gyro_random_walk = 2.0 * 4.0 / 3600.0 / 180.0 * M_PI;
         const double gyro_bias_tau = 1.0e3;
 
-        const double acc_noise_density = 2.0 * 2.0e-3;
-        const double acc_random_walk = 2.0 * 3.0e-3;
+        const double acc_noise_density = 2.0 * 1.2e-3;
+        const double acc_random_walk = 2.0 * 1.5e-3;
         const double acc_bias_tau = 300.0;
 
         const double gyro_phi = std::exp(-dt_safe / gyro_bias_tau);
@@ -92,7 +92,7 @@ void BarometerSensor::update(double dt, double alt_amsl) {
     double pressure_ratio = std::pow(ISA_TEMPERATURE_MSL_K / temperature, 5.256);
     double absolute_pressure = ISA_PRESSURE_MSL_PA / pressure_ratio;
 
-    double noise = enable_noise ? dist(gen) * 1.0 : 0.0;
+    double noise = enable_noise ? dist(gen) * 0.35 : 0.0;
     double pressure_noisy = absolute_pressure + noise;
     
     pressure_hpa = pressure_noisy * 0.01;
@@ -130,9 +130,9 @@ void GPSSensor::update(double dt, const Eigen::Vector3d& pos_ned, const Eigen::V
     const double xy_noise_density = 2.0e-4;
     const double z_noise_density = 4.0e-4;
     const double vxy_noise_density = 0.2;
-    const double vz_noise_density = 0.4;
+    const double vz_noise_density = 0.18;
     const double xy_random_walk = 2.0;
-    const double z_random_walk = 4.0;
+    const double z_random_walk = 1.6;
     const double correlation_time = 60.0;
 
     Eigen::Vector3d noise_pos = Eigen::Vector3d::Zero();
