@@ -70,8 +70,10 @@ public:
     bool is_updated() const { return updated; }
     
     struct GpsData {
-        double lat, lon, alt;
-        Eigen::Vector3d vel;
+        double lat = 0.0;
+        double lon = 0.0;
+        double alt = 0.0;
+        Eigen::Vector3d vel = Eigen::Vector3d::Zero();
     };
     GpsData get_data() const { return data; }
 
