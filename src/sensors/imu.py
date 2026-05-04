@@ -133,7 +133,11 @@ class ADIS16448IMU(SimComponentBase):
             self._gyro_saturation_latched = False
 
         self.last_output = (acc_meas, gyro_meas)
+        self.updated = True
         return self.last_output
+
+    def is_updated(self) -> bool:
+        return self.updated
 
     def _apply_lpf(self, value, dt, cutoff_hz, channel):
         tau = 1.0 / (2.0 * np.pi * max(cutoff_hz, 1e-6))

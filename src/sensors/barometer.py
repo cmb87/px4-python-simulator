@@ -31,6 +31,8 @@ class BarometerSensor(SimComponentBase):
         self.noise_stddev = 1.0  # 1 Pa RMS
         self.use_last_noise = False
         self.last_noise = 0.0
+        self.next_update_us = 0
+        self.updated = False
 
     def set_update_rate(self, hz: float):
         self.dt = 1.0 / hz
@@ -53,6 +55,8 @@ class BarometerSensor(SimComponentBase):
         self.pressure_drift_pa = 0.0
         self.use_last_noise = False
         self._last_t_us = self.time_us
+        self.next_update_us = self.time_us
+        self.updated = False
 
     def _gaussian_noise(self) -> float:
         """Generates Gaussian noise using Box-Muller transform."""
@@ -80,12 +84,17 @@ class BarometerSensor(SimComponentBase):
         if z_position_local is None:
             raise ValueError("BarometerSensor requires input: z_position_local")
 
+        if self.last_output is not None and int(t_us) < self.next_update_us:
+            self.updated = False
+            return self.last_output
+
         dt = self._compute_dt_s(t_us)
         if dt <= 0.0:
             dt = self.dt
 
         self.time += dt
         self.time_us = int(t_us)
+        self.next_update_us = int(self.time_us + self.dt * 1e6)
 
         # Altitude above sea level
         alt_rel = z_position_local
@@ -122,7 +131,11 @@ class BarometerSensor(SimComponentBase):
             "pressure_altitude_m": pressure_altitude,
             "temperature_c": temperature_c,
         }
+        self.updated = True
         return self.last_output
+
+    def is_updated(self) -> bool:
+        return self.updated
 
     def tick(self, z_position_local: float) -> dict:
         """Compatibility wrapper."""

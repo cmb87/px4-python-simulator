@@ -28,7 +28,7 @@ class GpsSensor(SimComponentBase):
         self.xy_noise_density = 2.0e-4
         self.z_noise_density = 4.0e-4
         self.vxy_noise_density = 0.2
-        self.vz_noise_density = 0.4
+        self.vz_noise_density = 0.004
         self.xy_random_walk = 2.0
         self.z_random_walk = 4.0
 
@@ -92,8 +92,8 @@ class GpsSensor(SimComponentBase):
             random_walk = [0.0, 0.0, 0.0]
 
         # Bias update
-        for i in range(3):
-            self.bias[i] += random_walk[i] * dt - self.bias[i] / self.correlation_time
+       # for i in range(3):
+       #     self.bias[i] += random_walk[i] * dt - self.bias[i] / self.correlation_time
 
         noisy_pos = [position_m[i] + noise_pos[i] + self.bias[i] for i in range(3)]
         lat, lon = self._reproject((noisy_pos[0], noisy_pos[1], noisy_pos[2]))
