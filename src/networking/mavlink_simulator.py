@@ -59,7 +59,7 @@ class MavlinkSimulator:
 
         vel_down = float(-gps[5])
         
-        print(f"HIL_SENSOR: t={sim_time_us} accX={acc[0]:.2f} accZ={acc[2]:.2f} baro={pressure_alt-447.0:.2f} altGps={float(gps[2])-447.0:.2f} velDGps={int(round(vel_down ))}, fields_updated={fields_updated}")
+      #  print(f"HIL_SENSOR: t={sim_time_us} accX={acc[0]:.2f} accZ={acc[2]:.2f} baro={pressure_alt-447.0:.2f} altGps={float(gps[2])-447.0:.2f} velDGps={int(round(vel_down ))}, fields_updated={fields_updated}")
 
         self.conn.mav.hil_sensor_send(
             int(sim_time_us),
