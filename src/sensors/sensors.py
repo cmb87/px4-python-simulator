@@ -4,8 +4,9 @@ from vehicles.base_component import SimComponentBase
 from dynamics.quaternion import Quaternion
 from .barometer import BarometerSensor
 from .gps import GpsSensor
-from .imu import ADIS16448IMU
+from .imu import SimpleIMU
 from .magnetometer import MagnetometerSim
+from .airspeed import AirspeedSensor
 
 
 DEFAULT_GPS_ORIGIN = {
@@ -14,16 +15,13 @@ DEFAULT_GPS_ORIGIN = {
     "alt": 0.0,
 }
 
-DEFAULT_DIFF_PRESSURE_NOISE_STD = 0.002
-DEFAULT_DIFF_PRESSURE_LPF_TAU_S = 0.08
-
 
 class SensorSuite(SimComponentBase):
     def __init__(self):
         super().__init__()
         self.mag = MagnetometerSim()
         self.mag.set_noise(True)
-        self.imu = ADIS16448IMU()
+        self.imu = SimpleIMU()
         self.imu.set_noise(True)
 
         self._sensor_params_initialized = False
@@ -37,8 +35,7 @@ class SensorSuite(SimComponentBase):
         self.baro.set_drift_rate(0.05)
         self.baro.set_noise(True)
 
-        self._diff_pressure_initialized = False
-        self._diff_pressure_pa = 0.0
+        self.airspeed = AirspeedSensor()
 
     def _initialize_from_parameters(self, P):
         gps_origin = getattr(P, "gps_origin", DEFAULT_GPS_ORIGIN)
@@ -53,8 +50,6 @@ class SensorSuite(SimComponentBase):
         self.imu.set_gravity(gravity_mps2)
 
         self._sensor_params_initialized = True
-        self._diff_pressure_initialized = False
-        self._diff_pressure_pa = 0.0
 
     def update(self, t_us, paused):
         if paused:
@@ -71,103 +66,57 @@ class SensorSuite(SimComponentBase):
         if not self._sensor_params_initialized:
             self._initialize_from_parameters(P)
 
-        pos = y[0:3]
-        quat = y[3:7] / np.linalg.norm(y[3:7])
-        vel = y[7:10]
-        wind_vec = np.zeros(6) if wind is None else np.asarray(wind, dtype=float)
-        wind_body = wind_vec[:3]
-        omega = y[10:13]
-        accel_body_rate = ydot[7:10]
-
-        Mfg = Quaternion.Mfg(quat)
-        Mgf = Mfg.T
-
-        euler = np.rad2deg(Quaternion.quat2Euler(quat))
-        vel_ned = Mgf @ vel
-
-        # Match jMAVSim sensor path: accelerometer should see specific force from
-        # inertial acceleration projected to body. dynamics() provides body-velocity
-        # derivative (u_dot, v_dot, w_dot), which includes -omega x v. Add omega x v
-        # back to recover force/mass term for IMU modeling.
-        accel_for_imu = np.asarray(accel_body_rate, dtype=float) + np.cross(np.asarray(omega, dtype=float), np.asarray(vel, dtype=float))
-
-        self.imu.set_inputs(acc_body=accel_for_imu, ang_vel_body=omega, orientation_quat=quat)
+        # Update all sensors with common inputs
+        self.imu.set_inputs(y=y, ydot=ydot, P=P)
         acc_meas, gyro_meas = self.imu.update(t_us, paused=False)
 
-        self.mag.set_inputs(orientation_quat=quat, mag_field_ned=P.magnetic_ned)
+        self.mag.set_inputs(y=y, mag_field_ned=P.magnetic_ned)
         mag_meas = self.mag.update(t_us, paused=False)["mag_field_body_gauss"]
 
-        self.baro.set_inputs(z_position_local=-pos[2])
+        self.baro.set_inputs(y=y)
         baro_reading = self.baro.update(t_us, paused=False)
+        
+        self.airspeed.set_inputs(y=y, wind=wind, P=P)
+        airspeed_reading = self.airspeed.update(t_us, paused=False)
+
+        self.gps.set_inputs(y=y)
+        gps_data = self.gps.update(t_us, paused=False)
+        
+        # Format outputs as expected by the caller
         static_pressure = baro_reading["absolute_pressure_hpa"] * 100.0
-
-        vel_air_body = np.asarray(vel, dtype=float) - np.asarray(wind_body, dtype=float)
-
-        pitot_axis_body = np.asarray(getattr(P, "pitot_axis_body", np.array([1.0, 0.0, 0.0])), dtype=float).reshape(3)
-        pitot_axis_norm = float(np.linalg.norm(pitot_axis_body))
-        if pitot_axis_norm <= 1e-9:
-            pitot_axis_body = np.array([1.0, 0.0, 0.0], dtype=float)
-        else:
-            pitot_axis_body = pitot_axis_body / pitot_axis_norm
-
-        pitot_speed = float(np.dot(vel_air_body, pitot_axis_body))
-        dynamic_pressure_ideal = 0.5 * float(P.rho) * max(pitot_speed, 0.0) ** 2
-
-        dt = self._compute_dt_s(t_us)
-        if dt <= 0.0:
-            dt = 1.0 / 250.0
-        diff_pressure_lpf_tau_s = max(float(DEFAULT_DIFF_PRESSURE_LPF_TAU_S), 1e-6)
-        alpha_dp = dt / (diff_pressure_lpf_tau_s + dt)
-
-        if not self._diff_pressure_initialized:
-            self._diff_pressure_pa = dynamic_pressure_ideal
-            self._diff_pressure_initialized = True
-        else:
-            self._diff_pressure_pa = self._diff_pressure_pa + alpha_dp * (dynamic_pressure_ideal - self._diff_pressure_pa)
-
-        diff_pressure_noise_std = float(DEFAULT_DIFF_PRESSURE_NOISE_STD)
-        dynamic_pressure_meas = self._diff_pressure_pa + np.random.normal(0.0, diff_pressure_noise_std)
-        dynamic_pressure_meas = max(float(dynamic_pressure_meas), 0.0)
-        rho_air = max(float(P.rho), 1e-6)
-        airspeed_ias_mps = float(np.sqrt(2.0 * dynamic_pressure_meas / rho_air))
-        airspeed_tas_mps = float(np.linalg.norm(vel_air_body))
         baro_meas = {
             "staticAbsolute": static_pressure,
             "static": static_pressure,
-            "dynamic": dynamic_pressure_meas,
+            "dynamic": airspeed_reading["dynamic_pressure_pa"],
             "pressure_altitude_m": float(baro_reading["pressure_altitude_m"]),
         }
 
-        self.gps.set_inputs(position_m=pos, velocity_mps=vel_ned)
-        data = self.gps.update(t_us, paused=False)
         gps_meas = np.array([
-            data["latitude_deg"],
-            data["longitude_deg"],
-            data["altitude_m"],
-            data["velocity_north"],
-            data["velocity_east"],
-            data["velocity_up"],
+            gps_data["latitude_deg"],
+            gps_data["longitude_deg"],
+            gps_data["altitude_m"],
+            gps_data["velocity_north"],
+            gps_data["velocity_east"],
+            gps_data["velocity_up"],
             0.0,
         ])
 
-        imu_was_updated = self.imu.is_updated()
-        mag_was_updated = self.mag.is_updated()
-        baro_was_updated = self.baro.is_updated()
-        gps_was_updated = self.gps.is_updated()
+        quat = y[3:7] / np.linalg.norm(y[3:7])
+        euler = np.rad2deg(Quaternion.quat2Euler(quat))
 
         self.last_output = {
             "accelerometer": acc_meas,
             "gyroscope": gyro_meas,
             "magnetometer": mag_meas,
             "barometer": baro_meas,
-            "airspeed_ias_mps": airspeed_ias_mps,
-            "airspeed_tas_mps": airspeed_tas_mps,
+            "airspeed_ias_mps": airspeed_reading["airspeed_ias_mps"],
+            "airspeed_tas_mps": airspeed_reading["airspeed_tas_mps"],
             "gps": gps_meas,
-            "imu_updated": imu_was_updated,
-            "mag_updated": mag_was_updated,
-            "baro_updated": baro_was_updated,
-            "diff_press_updated": True,  # Assuming diff press updates with baro or imu
-            "gps_updated": gps_was_updated,
+            "imu_updated": self.imu.is_updated(),
+            "mag_updated": self.mag.is_updated(),
+            "baro_updated": self.baro.is_updated(),
+            "diff_press_updated": self.airspeed.is_updated(),
+            "gps_updated": self.gps.is_updated(),
             "euler": euler,
         }
         
@@ -176,6 +125,7 @@ class SensorSuite(SimComponentBase):
         self.mag.updated = False
         self.baro.updated = False
         self.gps.updated = False
+        self.airspeed.updated = False
 
         self._last_t_us = int(t_us)
         return self.last_output

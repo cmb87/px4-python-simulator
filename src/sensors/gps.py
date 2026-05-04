@@ -1,10 +1,11 @@
 import logging
 import math
 import random
+import numpy as np
 from typing import Tuple
 
 from vehicles.base_component import SimComponentBase
-
+from dynamics.quaternion import Quaternion
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +54,20 @@ class GpsSensor(SimComponentBase):
         if paused:
             return self.last_output
 
-        position_m = self._inputs.get("position_m")
-        velocity_mps = self._inputs.get("velocity_mps")
+        y = self._inputs.get("y")
+        if y is not None:
+            position_m = y[0:3]
+            vel_body = y[7:10]
+            quat = y[3:7] / np.linalg.norm(y[3:7])
+            Mfg = Quaternion.Mfg(quat)
+            Mgf = Mfg.T
+            velocity_mps = Mgf @ vel_body
+        else:
+            position_m = self._inputs.get("position_m")
+            velocity_mps = self._inputs.get("velocity_mps")
+
         if position_m is None or velocity_mps is None:
-            raise ValueError("GpsSensor requires inputs: position_m, velocity_mps")
+            raise ValueError("GpsSensor requires inputs: y or (position_m, velocity_mps)")
 
         if self.last_output is not None and int(t_us) < self.next_update_us:
             self.updated = False
@@ -92,8 +103,8 @@ class GpsSensor(SimComponentBase):
             random_walk = [0.0, 0.0, 0.0]
 
         # Bias update
-       # for i in range(3):
-       #     self.bias[i] += random_walk[i] * dt - self.bias[i] / self.correlation_time
+        # for i in range(3):
+        #     self.bias[i] += random_walk[i] * dt - self.bias[i] / self.correlation_time
 
         noisy_pos = [position_m[i] + noise_pos[i] + self.bias[i] for i in range(3)]
         lat, lon = self._reproject((noisy_pos[0], noisy_pos[1], noisy_pos[2]))
@@ -154,22 +165,3 @@ class GpsSensor(SimComponentBase):
         self.next_update_us = self.time_us
         self.updated = False
         self._last_t_us = self.time_us
-
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    gps = GpsSensor()
-    gps.set_update_rate(10.0)  # 10 Hz
-    gps.set_home(0.0, 0.0, 0.0)
-    gps.set_noise(True)
-
-    # Simulate 5 steps of GPS output
-    for _ in range(5):
-        position = (10.0, 5.0, -1.0)  # Local position (meters)
-        velocity = (0.5, 0.0, 0.0)    # Velocity (m/s)
-        reading = gps.tick(position, velocity)
-        logger.info("%s", reading)

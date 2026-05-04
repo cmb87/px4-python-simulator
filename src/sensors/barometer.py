@@ -1,6 +1,7 @@
 import logging
 import math
 import random
+import numpy as np
 
 from vehicles.base_component import SimComponentBase
 
@@ -80,9 +81,15 @@ class BarometerSensor(SimComponentBase):
         if paused:
             return self.last_output
 
-        z_position_local = self._inputs.get("z_position_local")
+        y = self._inputs.get("y")
+        if y is not None:
+            # y[2] is ze (Down positive), so z_position_local (Up positive) is -y[2]
+            z_position_local = -y[2]
+        else:
+            z_position_local = self._inputs.get("z_position_local")
+
         if z_position_local is None:
-            raise ValueError("BarometerSensor requires input: z_position_local")
+            raise ValueError("BarometerSensor requires input: y or z_position_local")
 
         if self.last_output is not None and int(t_us) < self.next_update_us:
             self.updated = False
@@ -142,21 +149,3 @@ class BarometerSensor(SimComponentBase):
         next_t_us = int(self.time * 1e6 + self.dt * 1e6)
         self.set_inputs(z_position_local=z_position_local)
         return self.update(next_t_us, paused=False)
-    
-
-if __name__ == "__main__":
-    # Example usage
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    baro = BarometerSensor()
-    baro.set_update_rate(20.0)  # 20 Hz
-    baro.set_drift_rate(0.05)   # 0.05 Pa/s drift
-    baro.set_noise(True)
-
-    for _ in range(10):
-        altitude = 20.0  # local z-position in meters
-        reading = baro.tick(altitude)
-        logger.info("%s", reading)

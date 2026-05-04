@@ -67,15 +67,17 @@ class MagnetometerSim(SimComponentBase):
         return mag_vector
 
     def update(self, t_us, paused):
-        """
-        Requires inputs via set_inputs(orientation_quat=...)
-        """
         if paused:
             return self.last_output
 
-        quat_body_to_world = self._inputs.get("orientation_quat")
+        y = self._inputs.get("y")
+        if y is not None:
+            quat_body_to_world = y[3:7] / np.linalg.norm(y[3:7])
+        else:
+            quat_body_to_world = self._inputs.get("orientation_quat")
+
         if quat_body_to_world is None:
-            raise ValueError("MagnetometerSim requires input: orientation_quat")
+            raise ValueError("MagnetometerSim requires input: y or orientation_quat")
 
         if self.last_output is not None and int(t_us) < self.next_update_us:
             self.updated = False
@@ -106,28 +108,3 @@ class MagnetometerSim(SimComponentBase):
 
     def is_updated(self) -> bool:
         return self.updated
-        """Compatibility wrapper."""
-        base_t_us = 0 if self._last_t_us is None else self._last_t_us
-        next_t_us = int(base_t_us + int(1e6 / self.pub_rate))
-        self.set_inputs(orientation_quat=quat_body_to_world)
-        return self.update(next_t_us, paused=False)
-    
-
-if __name__ == "__main__":
-    # Example usage
-    import time
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-    sim = MagnetometerSim()
-
-    for _ in range(500):
-        quat = [1,0, 0, 0]  # Identity quaternion
-        result = sim.simulate_step(quat)
-        if result:
-            logger.info("[%s] mag (body, gauss): %s", result["timestamp_us"], result["mag_field_body_gauss"])
-        time.sleep(0.005)  # Simulate your own timing (e.g., 200 Hz loop)

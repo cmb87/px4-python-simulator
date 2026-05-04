@@ -88,5 +88,5 @@ class X8Parameters:
         self.rail_dir_ned = np.array([np.cos(np.deg2rad(45)), 0.0, -np.sin(np.deg2rad(45))], dtype=float)
         self.rail_start_ned = np.asarray([0.0, 0.0, 0.0], dtype=float)
         self.left_rail = False
-        self.rail_length = 2.0
-        self.rail_pull_max = 20.0
+        self.rail_length = 2.01
+        self.rail_pull_max = 100.1
