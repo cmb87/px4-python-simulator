@@ -35,6 +35,8 @@ class MagnetometerSim(SimComponentBase):
 
         self.bias = np.zeros(3)
         self.rng = np.random.default_rng()
+        self.next_update_us = 0
+        self.updated = False
 
     def set_noise(self, enabled: bool):
         self.enable_noise = bool(enabled)
@@ -75,6 +77,10 @@ class MagnetometerSim(SimComponentBase):
         if quat_body_to_world is None:
             raise ValueError("MagnetometerSim requires input: orientation_quat")
 
+        if self.last_output is not None and int(t_us) < self.next_update_us:
+            self.updated = False
+            return self.last_output
+
         mag_field_ned = self._inputs.get("mag_field_ned")
         if mag_field_ned is not None:
             self.set_mag_field_ned(mag_field_ned)
@@ -82,6 +88,8 @@ class MagnetometerSim(SimComponentBase):
         dt = self._compute_dt_s(t_us)
         if dt <= 0.0:
             dt = self.dt
+
+        self.next_update_us = int(int(t_us) + self.dt * 1e6)
 
         r = Quaternion.Mfg(quat_body_to_world)
 
@@ -93,9 +101,11 @@ class MagnetometerSim(SimComponentBase):
             'timestamp_us': int(t_us),
             'mag_field_body_gauss': mag_noisy
         }
+        self.updated = True
         return self.last_output
 
-    def simulate_step(self, quat_body_to_world):
+    def is_updated(self) -> bool:
+        return self.updated
         """Compatibility wrapper."""
         base_t_us = 0 if self._last_t_us is None else self._last_t_us
         next_t_us = int(base_t_us + int(1e6 / self.pub_rate))

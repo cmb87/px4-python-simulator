@@ -150,6 +150,11 @@ class SensorSuite(SimComponentBase):
             0.0,
         ])
 
+        imu_was_updated = self.imu.is_updated()
+        mag_was_updated = self.mag.is_updated()
+        baro_was_updated = self.baro.is_updated()
+        gps_was_updated = self.gps.is_updated()
+
         self.last_output = {
             "accelerometer": acc_meas,
             "gyroscope": gyro_meas,
@@ -158,9 +163,20 @@ class SensorSuite(SimComponentBase):
             "airspeed_ias_mps": airspeed_ias_mps,
             "airspeed_tas_mps": airspeed_tas_mps,
             "gps": gps_meas,
-            "gps_updated": self.gps.is_updated(),
+            "imu_updated": imu_was_updated,
+            "mag_updated": mag_was_updated,
+            "baro_updated": baro_was_updated,
+            "diff_press_updated": True,  # Assuming diff press updates with baro or imu
+            "gps_updated": gps_was_updated,
             "euler": euler,
         }
+        
+        # Reset update flags in children
+        self.imu.updated = False
+        self.mag.updated = False
+        self.baro.updated = False
+        self.gps.updated = False
+
         self._last_t_us = int(t_us)
         return self.last_output
 

@@ -5,7 +5,14 @@ from pymavlink import mavutil
 
 logger = logging.getLogger(__name__)
 
-HIL_SENSOR_UPDATED_DIFF_PRESSURE_BIT = 1 << 10
+# HIL_SENSOR updated fields bitmask
+HIL_SENSOR_ACCEL_UPDATED = 0x07
+HIL_SENSOR_GYRO_UPDATED = 0x38
+HIL_SENSOR_MAG_UPDATED = 0x1C0
+HIL_SENSOR_BARO_STATIC_UPDATED = 0x200
+HIL_SENSOR_DIFF_PRESSURE_UPDATED = 0x400
+HIL_SENSOR_BARO_ALT_UPDATED = 0x800
+HIL_SENSOR_BARO_TEMP_UPDATED = 0x1000
 
 class MavlinkSimulator:
     def __init__(self, conn):
@@ -28,11 +35,31 @@ class MavlinkSimulator:
         gyro = np.asarray(sensors["gyroscope"], dtype=float)
         mag = np.asarray(sensors["magnetometer"], dtype=float)
         baro = sensors["barometer"]
+
+        fields_updated = 0
+        if sensors.get("imu_updated", True):
+            fields_updated |= HIL_SENSOR_GYRO_UPDATED | HIL_SENSOR_ACCEL_UPDATED
+        
+        if sensors.get("mag_updated", True):
+            fields_updated |= HIL_SENSOR_MAG_UPDATED
+            
+        if sensors.get("baro_updated", True):
+            fields_updated |= HIL_SENSOR_BARO_STATIC_UPDATED | HIL_SENSOR_BARO_ALT_UPDATED | HIL_SENSOR_BARO_TEMP_UPDATED
+            
+        if has_airspeed_sensor and sensors.get("diff_press_updated", True):
+            fields_updated |= HIL_SENSOR_DIFF_PRESSURE_UPDATED
+
+        # Calculate pressure altitude from absolute static pressure (Pa)
+        # Standard Atmosphere formula: h = 44330 * (1 - (P/P0)^(1/5.255))
+        static_pressure_pa = float(baro["staticAbsolute"])
+        pressure_alt = 44330.0 * (1.0 - (static_pressure_pa / 101325.0)**(1.0 / 5.25588))
+
+
         gps = np.asarray(sensors["gps"], dtype=float)
 
-        fields_updated = 8191
-        if not has_airspeed_sensor:
-            fields_updated &= ~HIL_SENSOR_UPDATED_DIFF_PRESSURE_BIT
+        vel_down = float(-gps[5])
+        
+        # print(f"HIL_SENSOR: t={sim_time_us} accX={acc[0]:.2f} accZ={acc[2]:.2f} baro={pressure_alt-447.0:.2f} altGps={float(gps[2])-447.0:.2f} velDGps={int(round(vel_down ))}, fields_updated={fields_updated}")
 
         self.conn.mav.hil_sensor_send(
             int(sim_time_us),
@@ -47,7 +74,7 @@ class MavlinkSimulator:
             float(mag[2]),
             float(baro["staticAbsolute"]) * 0.01,
             float(baro["dynamic"]) * 0.01,
-            float(baro.get("pressure_altitude_m", gps[2])),
+            float(pressure_alt),
             15.0,
             int(fields_updated),
         )
@@ -86,7 +113,7 @@ class MavlinkSimulator:
         vel_north = float(gps[3])
         vel_east = float(gps[4])
         vel_down = float(-gps[5])
-        vel_3d = float(np.linalg.norm(np.array([vel_north, vel_east, vel_down])))
+        vel_3d = float(np.linalg.norm(np.array([vel_north, vel_east])))
         cog_rad = float(np.arctan2(vel_east, vel_north))
         if cog_rad < 0.0:
             cog_rad += 2.0 * np.pi
