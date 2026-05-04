@@ -5,10 +5,10 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
-from .vehicles.iris import definition as iris
-from .vehicles.fwlm import definition as fwlm
-from .vehicles.ts04 import definition as ts04
-from .vehicles.x8 import definition as x8
+from .iris import definition as iris
+from .fwlm import definition as fwlm
+from .ts04 import definition as ts04
+from .x8 import definition as x8
 
 
 @dataclass(frozen=True)

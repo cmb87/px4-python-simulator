@@ -2,7 +2,7 @@ import logging
 import math
 import random
 
-from ..base_component import SimComponentBase
+from vehicles.base_component import SimComponentBase
 
 
 logger = logging.getLogger(__name__)

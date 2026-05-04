@@ -170,3 +170,26 @@ def compute_airspeed_mps(
     indicated_airspeed = max(float(np.dot(vel_air_body, axis)), 0.0)
     true_airspeed = float(np.linalg.norm(vel_air_body))
     return indicated_airspeed, true_airspeed
+
+
+def ned_to_lla_from_origin(pos_ned_m: np.ndarray, lat_home_deg: float, lon_home_deg: float, alt_home_m: float) -> tuple[float, float, float]:
+    earth_radius_m = 6371000.0
+    x_rad = float(pos_ned_m[0]) / earth_radius_m
+    y_rad = float(pos_ned_m[1]) / earth_radius_m
+    c = math.sqrt(x_rad * x_rad + y_rad * y_rad)
+    lat_home = math.radians(lat_home_deg)
+    lon_home = math.radians(lon_home_deg)
+
+    if c > 0.0:
+        sin_c = math.sin(c)
+        cos_c = math.cos(c)
+        sin_lat0 = math.sin(lat_home)
+        cos_lat0 = math.cos(lat_home)
+        lat = math.asin(cos_c * sin_lat0 + (x_rad * sin_c * cos_lat0) / c)
+        lon = lon_home + math.atan2(y_rad * sin_c, c * cos_lat0 * cos_c - x_rad * sin_lat0 * sin_c)
+    else:
+        lat = lat_home
+        lon = lon_home
+
+    alt_m = float(alt_home_m) - float(pos_ned_m[2])
+    return math.degrees(lat), math.degrees(lon), alt_m

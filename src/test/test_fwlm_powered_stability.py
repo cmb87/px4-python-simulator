@@ -1,6 +1,6 @@
 import numpy as np
 
-from vehicle.world import World
+from dynamics.world import World
 
 
 def test_fwlm_powered_flight_stays_finite_for_20s():

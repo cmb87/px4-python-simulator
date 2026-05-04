@@ -4,26 +4,27 @@
 import os
 import time
 import logging
-import math
 from typing import Any
 
 import numpy as np
 from pymavlink import mavutil
 
-from vehicle.sim_utils import (
+from vehicles.sim_utils import (
     compute_aero_angles_deg,
     controls_to_u,
     get_sim_millis,
+    ned_to_lla_from_origin,
     parse_env_float,
     parse_gt_output_mode,
     parse_positive_float,
     parse_vehicle_model,
 )
-from vehicle.quaternion import Quaternion
-from vehicle.world import World
-from vehicle.vehicle_catalog import list_vehicle_models
-from visualizer.websockerPublisher import GroundTruthWebSocketPublisher
-from visualizer.flightgearUdpPublisher import FlightGearUdpPublisher
+from dynamics.quaternion import Quaternion
+from dynamics.world import World
+from vehicles.vehicle_catalog import list_vehicle_models
+from networking.websocket_publisher import GroundTruthWebSocketPublisher
+from networking.flightgear_udp_publisher import FlightGearUdpPublisher
+from networking.mavlink_simulator import MavlinkSimulator
 
 
 
@@ -33,7 +34,6 @@ HEARTBEAT_INTERVAL_US = 1_000_000
 SYSTEM_TIME_INTERVAL_US = 1_000_000
 GPS_START_DELAY_US = 1_000_000
 MAVLINK_MSG_ID_HIL_STATE_QUATERNION = 115
-HIL_SENSOR_UPDATED_DIFF_PRESSURE_BIT = 1 << 10
 CHECK_FACTOR = 2
 
 MAVLINK_BIND_HOST = os.getenv("SIM_MAVLINK_BIND_HOST", "0.0.0.0")
@@ -45,7 +45,7 @@ GT_OUTPUT_MODE = os.getenv("SIM_GT_OUTPUT_MODE", "websocket").strip().lower()
 GT_OUTPUT_RATE_HZ_RAW = os.getenv("SIM_GT_OUTPUT_RATE_HZ", "30.0")
 FG_UDP_HOST = os.getenv("SIM_FG_UDP_HOST", "127.0.0.1")
 FG_UDP_PORT = int(os.getenv("SIM_FG_UDP_PORT", "5503"))
-VEHICLE_MODEL = os.getenv("SIM_VEHICLE_MODEL", "ts04").strip().lower()
+VEHICLE_MODEL = os.getenv("SIM_VEHICLE_MODEL", "x8").strip().lower()
 TS04_PITCH90_START = os.getenv("SIM_TS04_PITCH90_START", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
@@ -57,29 +57,6 @@ DEFAULT_GPS_ORIGIN = {
 }
 
 
-def ned_to_lla_from_origin(pos_ned_m: np.ndarray, lat_home_deg: float, lon_home_deg: float, alt_home_m: float) -> tuple[float, float, float]:
-    earth_radius_m = 6371000.0
-    x_rad = float(pos_ned_m[0]) / earth_radius_m
-    y_rad = float(pos_ned_m[1]) / earth_radius_m
-    c = math.sqrt(x_rad * x_rad + y_rad * y_rad)
-    lat_home = math.radians(lat_home_deg)
-    lon_home = math.radians(lon_home_deg)
-
-    if c > 0.0:
-        sin_c = math.sin(c)
-        cos_c = math.cos(c)
-        sin_lat0 = math.sin(lat_home)
-        cos_lat0 = math.cos(lat_home)
-        lat = math.asin(cos_c * sin_lat0 + (x_rad * sin_c * cos_lat0) / c)
-        lon = lon_home + math.atan2(y_rad * sin_c, c * cos_lat0 * cos_c - x_rad * sin_lat0 * sin_c)
-    else:
-        lat = lat_home
-        lon = lon_home
-
-    alt_m = float(alt_home_m) - float(pos_ned_m[2])
-    return math.degrees(lat), math.degrees(lon), alt_m
-
-
 def simulation_main() -> None:
     gt_output_mode = parse_gt_output_mode(GT_OUTPUT_MODE)
     gt_output_rate_hz = parse_positive_float(GT_OUTPUT_RATE_HZ_RAW, "SIM_GT_OUTPUT_RATE_HZ")
@@ -89,6 +66,7 @@ def simulation_main() -> None:
 
     mavlink_endpoint = f"tcpin:{MAVLINK_BIND_HOST}:{MAVLINK_BIND_PORT}"
     conn: Any = mavutil.mavlink_connection(mavlink_endpoint, source_component=51)
+    mav_sim = MavlinkSimulator(conn)
 
     logger.info("Waiting for Heartbeat ...")
     logger.info("Using vehicle model: %s", vehicle_model)
@@ -243,93 +221,24 @@ def simulation_main() -> None:
             if should_publish:
                 z = world_out["sensors"]
                 y = np.asarray(world_out["y"], dtype=float)
-                gps = np.asarray(z["gps"], dtype=float)
-                acc = np.asarray(z["accelerometer"], dtype=float)
-                gyro = np.asarray(z["gyroscope"], dtype=float)
-                mag = np.asarray(z["magnetometer"], dtype=float)
-                baro = z["barometer"]
-                fields_updated = 8191
                 has_airspeed_sensor = bool(getattr(world.P, "has_airspeed_sensor", False))
-                if not has_airspeed_sensor:
-                    fields_updated &= ~HIL_SENSOR_UPDATED_DIFF_PRESSURE_BIT
 
-                conn.mav.hil_sensor_send(
-                    int(sim_time_us),
-                    float(acc[0]),
-                    float(acc[1]),
-                    float(acc[2]),
-                    float(gyro[0]),
-                    float(gyro[1]),
-                    float(gyro[2]),
-                    float(mag[0]),
-                    float(mag[1]),
-                    float(mag[2]),
-                    float(baro["staticAbsolute"]) * 0.01,
-                    float(baro["dynamic"]) * 0.01,
-                    float(baro.get("pressure_altitude_m", gps[2])),
-                    15.0,
-                    int(fields_updated),
-                    )
+                mav_sim.send_hil_sensor(sim_time_us, z, has_airspeed_sensor)
 
                 if hil_state_interval_us > 0 and sim_time_us >= next_hil_state_time_us:
-                    vel_north = float(gps[3])
-                    vel_east = float(gps[4])
-                    vel_down = float(-gps[5])
-                    horiz_speed_m_s = float(np.hypot(vel_north, vel_east))
-                    m_s2_to_mg = 1000.0 / 9.80665
-                    conn.mav.hil_state_quaternion_send(
-                        int(sim_time_us),
-                        [float(v) for v in y[3:7]],
-                        float(y[10]),
-                        float(y[11]),
-                        float(y[12]),
-                        int(round(float(gps[0]) * 1e7)),
-                        int(round(float(gps[1]) * 1e7)),
-                        int(round(float(gps[2]) * 1000.0)),
-                        int(round(vel_north * 100.0)),
-                        int(round(vel_east * 100.0)),
-                        int(round(vel_down * 100.0)),
-                        int(round(horiz_speed_m_s * 100.0)),
-                        int(round(horiz_speed_m_s * 100.0)),
-                        int(round(float(acc[0]) * m_s2_to_mg)),
-                        int(round(float(acc[1]) * m_s2_to_mg)),
-                        int(round(float(acc[2]) * m_s2_to_mg)),
-                    )
+                    mav_sim.send_hil_state_quaternion(sim_time_us, y, z)
                     next_hil_state_time_us = sim_time_us + hil_state_interval_us
 
                 if sim_time_us >= next_system_time_us:
-                    conn.mav.system_time_send(int(time.time() * 1_000_000), int(sim_time_us / 1000))
+                    mav_sim.send_system_time(sim_time_us)
                     next_system_time_us = sim_time_us + SYSTEM_TIME_INTERVAL_US
 
                 if sim_time_us >= gps_start_time_us and bool(z.get("gps_updated", False)):
-                    vel_north = float(gps[3])
-                    vel_east = float(gps[4])
-                    vel_down = float(-gps[5])
-                    vel_3d = float(np.linalg.norm(np.array([vel_north, vel_east, vel_down])))
-                    cog_rad = float(np.arctan2(vel_east, vel_north))
-                    if cog_rad < 0.0:
-                        cog_rad += 2.0 * np.pi
-
-                    conn.mav.hil_gps_send(
-                        int(sim_time_us),
-                        3,
-                        int(round(float(gps[0]) * 1e7)),
-                        int(round(float(gps[1]) * 1e7)),
-                        int(round(float(gps[2]) * 1000.0)),
-                        100,
-                        100,
-                        int(round(vel_3d * 100.0)),
-                        int(round(vel_north * 100.0)),
-                        int(round(vel_east * 100.0)),
-                        int(round(vel_down * 100.0)),
-                        int(round(np.degrees(cog_rad) * 100.0)),
-                        10,
-                        0,
-                        0,
-                    )
+                    mav_sim.send_hil_gps(sim_time_us, z)
 
                 if gt_output_mode != "off" and sim_time_us >= next_output_time_us:
                     if gt_output_mode == "websocket":
+                        gps = np.asarray(z["gps"], dtype=float)
                         alpha_deg, beta_deg = compute_aero_angles_deg(y, world.wind)
                         gt_ws.publish(
                             {
@@ -378,13 +287,7 @@ def simulation_main() -> None:
 
 
             if sim_time_us >= next_heartbeat_time_us:
-                conn.mav.heartbeat_send(
-                    mavutil.mavlink.MAV_TYPE_GENERIC,
-                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-                    0,
-                    0,
-                    mavutil.mavlink.MAV_STATE_ACTIVE,
-                )
+                mav_sim.send_heartbeat()
                 next_heartbeat_time_us = sim_time_us + HEARTBEAT_INTERVAL_US
 
             slow_down_counter += 1

@@ -1,8 +1,8 @@
 import numpy as np
 
-from ...Rzyx import Rzyx
-from ...base_component import SimComponentBase
-from ...quaternion import Quaternion
+from dynamics.Rzyx import Rzyx
+from vehicles.base_component import SimComponentBase
+from dynamics.quaternion import Quaternion
 from ..common_forces.simple_motor import SimpleMotor
 
 

@@ -2,11 +2,11 @@ import logging
 
 import numpy as np
 
-from .base_component import SimComponentBase
+from vehicles.base_component import SimComponentBase
 from .dynamics import Dynamics6DOF, rail_dynamics
-from .vehicle_catalog import get_vehicle_definition
-from .vehicles.common_forces.catapult_rail import railForces, rail_alignment_quaternion_wxyz
-from .sensors.sensors import SensorSuite
+from vehicles.vehicle_catalog import get_vehicle_definition
+from vehicles.common_forces.catapult_rail import railForces, rail_alignment_quaternion_wxyz
+from sensors.sensors import SensorSuite
 
 
 logger = logging.getLogger(__name__)

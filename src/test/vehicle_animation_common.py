@@ -2,8 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-from vehicle.quaternion import Quaternion
-from vehicle.world import World
+from dynamics.quaternion import Quaternion
+from dynamics.world import World
 
 
 CATAPULT_DIR_NED = np.array([np.cos(np.deg2rad(45.0)), 0.0, -np.sin(np.deg2rad(45.0))], dtype=float)

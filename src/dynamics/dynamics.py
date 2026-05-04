@@ -2,7 +2,7 @@ import numpy as np
 import sys
 import logging
 
-from .base_component import SimComponentBase
+from vehicles.base_component import SimComponentBase
 from .quaternion import Quaternion
 
 
@@ -168,10 +168,10 @@ if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
 
-    from vehicle.vehicles.common_forces.catapult_rail import railForces
-    from vehicle.vehicles.x8.forces import forces
-    from vehicle.parameters import Parameters
-    from vehicle.sensors.sensors import sensors
+    from vehicles.common_forces.catapult_rail import railForces
+    from vehicles.x8.forces import forces
+    from vehicles.parameters import Parameters
+    from sensors.sensors import sensors
 
     P = Parameters()  # Load parameters, assuming this is defined in parameters.py
 

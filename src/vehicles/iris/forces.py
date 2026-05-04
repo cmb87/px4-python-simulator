@@ -1,6 +1,6 @@
 import numpy as np
 
-from ...base_component import SimComponentBase
+from vehicles.base_component import SimComponentBase
 from ..common_forces.simple_motor import SimpleMotor
 
 

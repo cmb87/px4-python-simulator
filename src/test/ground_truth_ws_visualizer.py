@@ -16,7 +16,7 @@ try:
 except ImportError as exc:
     raise SystemExit("Please install the 'websockets' package to use this visualizer") from exc
 
-from vehicle.quaternion import Quaternion
+from dynamics.quaternion import Quaternion
 
 
 logger = logging.getLogger(__name__)
