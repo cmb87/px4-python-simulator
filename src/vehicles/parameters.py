@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 
-from .vehicles.x8.parameters import X8Parameters
+from .x8.parameters import X8Parameters
 
 
 logger = logging.getLogger(__name__)

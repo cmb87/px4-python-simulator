@@ -4,7 +4,7 @@ import logging
 import math
 import time
 
-from visualizer.websockerPublisher import GroundTruthWebSocketPublisher
+from networking.websocket_publisher import GroundTruthWebSocketPublisher
 
 
 logger = logging.getLogger(__name__)

@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 
-from vehicle.world import World
+from dynamics.world import World
 from vehicle_animation_common import animate_vehicle, plot_sensor_suite_overview
 
 

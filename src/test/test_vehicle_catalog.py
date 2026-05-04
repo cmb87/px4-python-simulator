@@ -1,7 +1,7 @@
 import numpy as np
 
-from vehicle.vehicle_catalog import get_vehicle_definition, list_vehicle_models
-from vehicle.world import World
+from vehicles.vehicle_catalog import get_vehicle_definition, list_vehicle_models
+from dynamics.world import World
 
 
 def test_default_vehicle_registry_contains_known_models():
