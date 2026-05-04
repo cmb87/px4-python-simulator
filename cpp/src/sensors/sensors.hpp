@@ -1,112 +1,63 @@
 #pragma once
 
+#include "sensor_base.hpp"
+#include "imu.hpp"
+#include "barometer.hpp"
+#include "gps.hpp"
+#include "magnetometer.hpp"
+#include "airspeed.hpp"
+
 #include <Eigen/Dense>
-#include <random>
 #include <map>
 #include <string>
-#include <cstdint>
+
+struct VehicleParameters;
 
 namespace sensors {
 
-class SensorBase {
+class SensorSuite {
 public:
-    virtual ~SensorBase() = default;
-    virtual void set_noise(bool enabled) = 0;
-};
-
-class IMUSensor : public SensorBase {
-public:
-    IMUSensor();
-    void set_noise(bool enabled) override { enable_noise = enabled; }
-    void update(double dt, const Eigen::Vector3d& acc_body_rate, const Eigen::Vector3d& vel_body, const Eigen::Vector3d& gyro_body, const Eigen::Vector4d& quat);
+    SensorSuite();
     
-    Eigen::Vector3d get_accel() const { return acc_meas; }
-    Eigen::Vector3d get_gyro() const { return gyro_meas; }
-
-private:
-    bool enable_noise = true;
-    Eigen::Vector3d gyro_bias = Eigen::Vector3d::Zero();
-    Eigen::Vector3d acc_bias = Eigen::Vector3d::Zero();
-    Eigen::Vector3d acc_meas = Eigen::Vector3d::Zero();
-    Eigen::Vector3d gyro_meas = Eigen::Vector3d::Zero();
-    Eigen::Vector3d gravity_vec = Eigen::Vector3d(0, 0, -9.81);
+    void update(double t_us, bool paused, const Eigen::VectorXd& y, const Eigen::VectorXd& ydot, const Eigen::Vector3d& wind, const ::VehicleParameters& P);
     
-    Eigen::Vector3d acc_lpf_state = Eigen::Vector3d::Zero();
-    Eigen::Vector3d gyro_lpf_state = Eigen::Vector3d::Zero();
-    bool lpf_initialized = false;
-
-    std::mt19937 gen;
-    std::normal_distribution<double> dist;
-};
-
-class BarometerSensor : public SensorBase {
-public:
-    BarometerSensor();
-    void set_noise(bool enabled) override { enable_noise = enabled; }
-    void set_home_altitude(double alt_m) { home_altitude_amsl = alt_m; }
-    void update(double dt, double alt_amsl);
-    bool is_updated() const { return updated; }
-    
-    double get_pressure_hpa() const { return pressure_hpa; }
-    double get_altitude() const { return pressure_altitude; }
-
-private:
-    bool enable_noise = true;
-    bool updated = false;
-    uint64_t elapsed_us = 0;
-    uint64_t update_interval_us = 50000; // 20 Hz
-    double home_altitude_amsl = 0.0;
-    double pressure_hpa = 1013.25;
-    double pressure_altitude = 0.0;
-    double pressure_drift_pa_per_sec = 0.0;
-    double pressure_drift_pa = 0.0;
-    std::mt19937 gen;
-    std::normal_distribution<double> dist;
-};
-
-class GPSSensor : public SensorBase {
-public:
-    GPSSensor();
-    void set_noise(bool enabled) override { enable_noise = enabled; }
-    void set_home(double lat_deg, double lon_deg, double alt_m);
-    void update(double dt, const Eigen::Vector3d& pos_ned, const Eigen::Vector3d& vel_ned);
-    bool is_updated() const { return updated; }
-    
-    struct GpsData {
-        double lat = 0.0;
-        double lon = 0.0;
-        double alt = 0.0;
-        Eigen::Vector3d vel = Eigen::Vector3d::Zero();
+    struct SensorOutputs {
+        Eigen::Vector3d accel;
+        Eigen::Vector3d gyro;
+        Eigen::Vector3d mag;
+        struct Baro {
+            double abs_pressure_pa;
+            double pressure_alt;
+            double temp_c;
+        } baro;
+        struct Airspeed {
+            double ias;
+            double tas;
+            double dynamic_pressure_pa;
+        } airspeed;
+        GPSSensor::GpsData gps;
+        
+        bool imu_updated = false;
+        bool mag_updated = false;
+        bool baro_updated = false;
+        bool airspeed_updated = false;
+        bool gps_updated = false;
+        
+        Eigen::Vector3d euler_deg;
     };
-    GpsData get_data() const { return data; }
+
+    const SensorOutputs& get_outputs() const { return outputs_; }
+
+    IMUSensor imu;
+    BarometerSensor baro;
+    GPSSensor gps;
+    MagnetometerSensor mag;
+    AirspeedSensor airspeed;
 
 private:
-    bool enable_noise = true;
-    bool updated = false;
-    uint64_t elapsed_us = 0;
-    uint64_t update_interval_us = 200000; // 5 Hz
-    double update_interval = 1.0 / 5.0; // 5 Hz
-    double lat_home, lon_home, alt_home;
-    GpsData data;
-    Eigen::Vector3d bias = Eigen::Vector3d::Zero();
-    std::mt19937 gen;
-    std::normal_distribution<double> dist;
+    SensorOutputs outputs_;
+    bool params_initialized_ = false;
+    void initialize_from_parameters(const ::VehicleParameters& P);
 };
 
-class MagnetometerSensor : public SensorBase {
-public:
-    MagnetometerSensor();
-    void set_noise(bool enabled) override { enable_noise = enabled; }
-    void update(double dt, const Eigen::Vector4d& quat, const Eigen::Vector3d& mag_ned);
-    
-    Eigen::Vector3d get_mag() const { return mag_meas; }
-
-private:
-    bool enable_noise = true;
-    Eigen::Vector3d mag_meas = Eigen::Vector3d::Zero();
-    Eigen::Vector3d bias = Eigen::Vector3d::Zero();
-    std::mt19937 gen;
-    std::normal_distribution<double> dist;
-};
-
-}
+} // namespace sensors
