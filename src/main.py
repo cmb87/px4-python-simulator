@@ -199,6 +199,7 @@ def simulation_main() -> None:
             io_run_only = (slow_down_counter % CHECK_FACTOR) != 0
             now_ms = get_sim_millis(sim_time_us)
             needs_to_pause = (last_time_ran_ms == now_ms) or io_run_only
+
             if catapult_countdown_active and catapult_release_time_us is not None:
                 if sim_time_us >= catapult_release_time_us:
                     catapult_countdown_active = False
@@ -210,6 +211,7 @@ def simulation_main() -> None:
                     next_countdown_announce_us = sim_time_us + 1_000_000
 
             freeze_for_countdown = catapult_enabled and catapult_countdown_active
+            
             world_out = world.update(
                 sim_time_us,
                 needs_to_pause,

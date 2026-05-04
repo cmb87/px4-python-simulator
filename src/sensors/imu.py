@@ -47,6 +47,7 @@ class ADIS16448IMU(SimComponentBase):
         self._gyro_lpf_initialized = False
         self._acc_saturation_latched = False
         self._gyro_saturation_latched = False
+        self.updated = False
 
     def set_noise(self, enabled: bool):
         self.enable_noise = bool(enabled)
@@ -62,18 +63,26 @@ class ADIS16448IMU(SimComponentBase):
         
 
     def update(self, t_us, paused):
-        """
-        Requires inputs via set_inputs(acc_body=..., ang_vel_body=..., orientation_quat=...)
-        """
         if paused:
             return self.last_output
 
-        acc_body = self._inputs.get("acc_body")
-        ang_vel_body = self._inputs.get("ang_vel_body")
-        orientation_quat = self._inputs.get("orientation_quat")
+        y = self._inputs.get("y")
+        ydot = self._inputs.get("ydot")
+
+        if y is not None and ydot is not None:
+            orientation_quat = y[3:7] / np.linalg.norm(y[3:7])
+            ang_vel_body = y[10:13]
+            vel_body = y[7:10]
+            accel_body_rate = ydot[7:10]
+            # specific force = accel_body_rate + omega x vel_body
+            acc_body = np.asarray(accel_body_rate, dtype=float) + np.cross(np.asarray(ang_vel_body, dtype=float), np.asarray(vel_body, dtype=float))
+        else:
+            acc_body = self._inputs.get("acc_body")
+            ang_vel_body = self._inputs.get("ang_vel_body")
+            orientation_quat = self._inputs.get("orientation_quat")
 
         if acc_body is None or ang_vel_body is None or orientation_quat is None:
-            raise ValueError("ADIS16448IMU requires inputs: acc_body, ang_vel_body, orientation_quat")
+            raise ValueError("ADIS16448IMU requires inputs: y/ydot or acc_body/ang_vel_body/orientation_quat")
 
         dt = self._compute_dt_s(t_us)
         if dt <= 0.0:
@@ -102,33 +111,18 @@ class ADIS16448IMU(SimComponentBase):
         acc_meas = np.clip(acc_raw, -self.acc_range_mps2, self.acc_range_mps2)
         gyro_meas = np.clip(gyro_raw, -self.gyro_range_rps, self.gyro_range_rps)
 
-        acc_raw_str = np.array2string(acc_raw, formatter={"float_kind": lambda x: f"{x:.2f}"})
-        acc_clip_str = np.array2string(acc_meas, formatter={"float_kind": lambda x: f"{x:.2f}"})
-        gyro_raw_str = np.array2string(gyro_raw, formatter={"float_kind": lambda x: f"{x:.2f}"})
-        gyro_clip_str = np.array2string(gyro_meas, formatter={"float_kind": lambda x: f"{x:.2f}"})
-
         acc_is_clipped = bool(np.any(np.abs(acc_raw - acc_meas) > 1e-12))
         gyro_is_clipped = bool(np.any(np.abs(gyro_raw - gyro_meas) > 1e-12))
 
         if acc_is_clipped and (not self._acc_saturation_latched):
             self._acc_saturation_latched = True
-            logger.info(
-                "IMU accelerometer saturation: raw=%s clipped=%s limit=%.3f m/s^2",
-                acc_raw_str,
-                acc_clip_str,
-                float(self.acc_range_mps2),
-            )
+            logger.info("IMU accelerometer saturation")
         elif (not acc_is_clipped) and self._acc_saturation_latched:
             self._acc_saturation_latched = False
 
         if gyro_is_clipped and (not self._gyro_saturation_latched):
             self._gyro_saturation_latched = True
-            logger.info(
-                "IMU gyroscope saturation: raw=%s clipped=%s limit=%.3f rad/s",
-                gyro_raw_str,
-                gyro_clip_str,
-                float(self.gyro_range_rps),
-            )
+            logger.info("IMU gyroscope saturation")
         elif (not gyro_is_clipped) and self._gyro_saturation_latched:
             self._gyro_saturation_latched = False
 
@@ -184,19 +178,56 @@ class ADIS16448IMU(SimComponentBase):
         return acc + self.acc_bias + noise
 
 
+class SimpleIMU(SimComponentBase):
+    def __init__(self, acc_std=0.0001, gyro_std=0.00001):
+        super().__init__()
+        self.acc_std = acc_std
+        self.gyro_std = gyro_std
+        self.enable_noise = True
+        self.gravity_vector = np.array([0.0, 0.0, -9.81], dtype=float)
+        self.rng = np.random.default_rng()
+        self.updated = False
 
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    imu = ADIS16448IMU()
+    def set_noise(self, enabled: bool):
+        self.enable_noise = bool(enabled)
 
-    acc_world = np.array([0.0, 0.0, 0.0])  # e.g., stationary
-    ang_vel_body = np.array([0.01, 0.0, 0.0])  # slight rotation
-    quat = [1.0, 0.0, 0.0, 0.0]  # identity orientation
-    imu.set_inputs(acc_body=acc_world, ang_vel_body=ang_vel_body, orientation_quat=quat)
-    acc_measured, gyro_measured = imu.update(10_000, paused=False)
-    logger.info("Measured acceleration: %s", acc_measured)
-    logger.info("Measured angular velocity: %s", gyro_measured)
+    def set_gravity(self, gravity_mps2: float):
+        self.gravity_vector = np.array([0.0, 0.0, -float(gravity_mps2)], dtype=float)
+
+    def update(self, t_us, paused):
+        if paused:
+            return self.last_output
+
+        y = self._inputs.get("y")
+        ydot = self._inputs.get("ydot")
+
+        if y is not None and ydot is not None:
+            orientation_quat = y[3:7] / np.linalg.norm(y[3:7])
+            ang_vel_body = y[10:13]
+            vel_body = y[7:10]
+            accel_body_rate = ydot[7:10]
+            acc_body = np.asarray(accel_body_rate, dtype=float) + np.cross(np.asarray(ang_vel_body, dtype=float), np.asarray(vel_body, dtype=float))
+        else:
+            acc_body = self._inputs.get("acc_body")
+            ang_vel_body = self._inputs.get("ang_vel_body")
+            orientation_quat = self._inputs.get("orientation_quat")
+
+        if acc_body is None or ang_vel_body is None or orientation_quat is None:
+            raise ValueError("SimpleIMU requires inputs: y/ydot or acc_body/ang_vel_body/orientation_quat")
+
+        R_wb = Quaternion.Mfg(orientation_quat)
+        gravity_body = R_wb @ self.gravity_vector
+
+        acc_meas = np.asarray(acc_body, dtype=float) + gravity_body
+        gyro_meas = np.asarray(ang_vel_body, dtype=float)
+
+        if self.enable_noise:
+            acc_meas += self.rng.normal(0, self.acc_std, 3)
+            gyro_meas += self.rng.normal(0, self.gyro_std, 3)
+
+        self.last_output = (acc_meas, gyro_meas)
+        self.updated = True
+        return self.last_output
+
+    def is_updated(self) -> bool:
+        return self.updated
