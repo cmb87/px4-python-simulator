@@ -28,7 +28,16 @@ Eigen::Matrix3d Mfg_from_quat(const Eigen::Vector4d& q) {
     return M;
 }
 
-Eigen::VectorXd dynamics_6dof(double t, const Eigen::VectorXd& y, const X8Parameters& P, const Eigen::VectorXd& tau) {
+Eigen::Vector3d euler_from_quat(const Eigen::Vector4d& q) {
+    double a = q[0], b = q[1], c = q[2], d = q[3];
+    Eigen::Vector3d euler;
+    euler[0] = std::atan2(2 * (c * d + a * b), (a * a - b * b - c * c + d * d));
+    euler[1] = std::asin(std::max(-1.0, std::min(1.0, 2 * (a * c - b * d))));
+    euler[2] = std::atan2(2 * (b * c + a * d), (a * a + b * b - c * c - d * d));
+    return euler;
+}
+
+Eigen::VectorXd dynamics_6dof(double t, const Eigen::VectorXd& y, const VehicleParameters& P, const Eigen::VectorXd& tau) {
     Eigen::Vector3d pos = y.segment<3>(0);
     Eigen::Vector4d quat = y.segment<4>(3);
     Eigen::Vector3d vel = y.segment<3>(7); // Body frame
@@ -78,7 +87,7 @@ Eigen::VectorXd dynamics_6dof(double t, const Eigen::VectorXd& y, const X8Parame
     return xdot;
 }
 
-Eigen::VectorXd rail_dynamics(double t, const Eigen::VectorXd& y, X8Parameters& P, const Eigen::VectorXd& tau) {
+Eigen::VectorXd rail_dynamics(double t, const Eigen::VectorXd& y, VehicleParameters& P, const Eigen::VectorXd& tau) {
     Eigen::Vector4d quat = y.segment<4>(3);
     Eigen::Vector3d vel = y.segment<3>(7);
 
@@ -114,5 +123,6 @@ Eigen::VectorXd rail_dynamics(double t, const Eigen::VectorXd& y, X8Parameters& 
 
     return xdot;
 }
+
 
 }

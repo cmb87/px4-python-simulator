@@ -51,10 +51,17 @@ FetchContent_MakeAvailable(mavlink)
 add_executable(x8_sim
     src/main.cpp
     src/x8/forces.cpp
+    src/iris/forces.cpp
     src/dynamics/dynamics.cpp
     src/sensors/sensors.cpp
+    src/sensors/imu.cpp
+    src/sensors/barometer.cpp
+    src/sensors/gps.cpp
+    src/sensors/magnetometer.cpp
+    src/sensors/airspeed.cpp
     src/networking/websocket_publisher.cpp
     src/networking/mavlink_interface.cpp
+    src/networking/mavlink_simulator.cpp
 )
 
 target_include_directories(x8_sim PRIVATE 

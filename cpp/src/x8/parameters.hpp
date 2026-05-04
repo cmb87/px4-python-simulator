@@ -3,8 +3,9 @@
 #include <Eigen/Dense>
 #include <map>
 #include <string>
+#include "../dynamics/vehicle_parameters.hpp"
 
-struct X8Parameters {
+struct X8Parameters : public VehicleParameters {
     X8Parameters() {
         r_cg = Eigen::Vector3d::Zero();
         mass = 4.364;
@@ -41,6 +42,7 @@ struct X8Parameters {
         C_D_alpha1 = 0.079091463157662967;
         C_D_0 = 0.01970001181915082;
         C_D_beta2 = 0.14781193079241584;
+        C_D_alpha1 = 0.079091463157662967; // Wait, I see C_D_alpha1 repeated in original file? No, I'll just keep it clean.
         C_D_beta1 = -0.0058429803454153884;
         C_D_q = 0;
 
@@ -90,11 +92,7 @@ struct X8Parameters {
     }
 
     Eigen::Vector3d r_cg;
-    double mass;
-    double rho;
     double Jx, Jy, Jz, Jxz;
-    Eigen::Matrix3d I_cg;
-    Eigen::Matrix3d I_cg_inv;
 
     double S_wing, b, c, S_prop;
     double k_motor, k_T_P, k_Omega, C_prop;
@@ -105,19 +103,5 @@ struct X8Parameters {
     double C_Y_beta, C_Y_0, C_Y_p, C_Y_r, C_Y_delta_a, C_Y_delta_r;
     double C_l_beta, C_l_0, C_l_p, C_l_r, C_l_delta_a, C_l_delta_r;
     double C_n_beta, C_n_0, C_n_p, C_n_r, C_n_delta_a, C_n_delta_r;
-
-    double gravity;
-    Eigen::Vector3d magnetic_ned;
-
-    bool has_airspeed_sensor;
-    Eigen::Vector3d pitot_axis_body;
-
-    std::map<std::string, double> gps_origin;
-
-    bool rail_launch_enabled;
-    Eigen::Vector3d rail_dir_ned;
-    Eigen::Vector3d rail_start_ned;
-    bool left_rail;
-    double rail_length;
-    double rail_pull_max;
 };
+
