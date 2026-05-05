@@ -1,4 +1,5 @@
 #include "barometer.hpp"
+#include "sensor_params.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -30,8 +31,8 @@ void BarometerSensor::update(double t_us, const Eigen::VectorXd& y) {
         return;
     }
 
-    double dt = (last_t_us_ == 0) ? dt_s_ : (t_us - last_t_us_) / 1e6;
-    if (dt <= 0.0) dt = dt_s_;
+    double dt = (last_t_us_ == 0) ? DT_DEFAULT : (t_us - last_t_us_) / 1e6;
+    if (dt <= 0.0) dt = DT_DEFAULT;
 
     last_t_us_ = static_cast<uint64_t>(t_us);
     next_update_us_ = static_cast<uint64_t>(t_us + dt_s_ * 1e6);
@@ -54,12 +55,9 @@ void BarometerSensor::update(double t_us, const Eigen::VectorXd& y) {
 
     pressure_hpa_ = pressure_noisy * 0.01;
 
-    // Calculate air density at current altitude
-    double density_ratio = std::pow(ISA_TEMPERATURE_MSL_K / temperature, 4.256);
-    double air_density = ISA_AIR_DENSITY_MSL_KGPM3 / density_ratio;
-
-    // Compute pressure altitude (approximate)
-    pressure_altitude_ = alt_amsl - (noise + pressure_drift_pa_) / (gravity_mps2_ * air_density);
+    // MATCH PYTHON FORMULA FOR PRESSURE ALTITUDE
+    // Standard Atmosphere formula: h = 44330 * (1 - (P/P0)^(1/5.25588))
+    pressure_altitude_ = 44330.0 * (1.0 - std::pow(pressure_noisy / ISA_PRESSURE_MSL_PA, 1.0 / 5.25588));
 
     temperature_c_ = temperature + ABSOLUTE_ZERO_C;
     updated_ = true;
