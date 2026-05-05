@@ -23,3 +23,22 @@ HIL_SENSOR: t=14184000 accX=6.94 accZ=-6.94 baro=-0.05 altGps=0.00 velDGps=0, fi
 HIL_SENSOR: t=14192000 accX=6.94 accZ=-6.94 baro=-0.05 altGps=0.00 velDGps=0, fields_updated=1087
 HIL_SENSOR: t=14200000 accX=6.94 accZ=-6.94 baro=-0.05 altGps=0.00 velDGps=0, fields_updated=1535
 HIL_SENSOR: t=14208000 accX=6.94 accZ=-6.94 baro=-0.05 altGps=0.00 velDGps=0, fields_updated=1087
+
+
+HIL_SENSOR: t=6228000 accX=6.94 accZ=-6.94 baro=-0.03 altGps=0.00 velDGps=0, fields_updated=7743
+HIL_SENSOR: t=6236000 accX=6.94 accZ=-6.94 baro=-0.03 altGps=0.00 velDGps=0, fields_updated=1535
+HIL_SENSOR: t=6244000 accX=6.94 accZ=-6.94 baro=-0.03 altGps=0.00 velDGps=0, fields_updated=1087
+HIL_SENSOR: t=6252000 accX=6.94 accZ=-6.94 baro=-0.03 altGps=0.00 velDGps=0, fields_updated=1535
+HIL_SENSOR: t=6260000 accX=6.94 accZ=-6.94 baro=-0.03 altGps=0.00 velDGps=0, fields_updated=1087
+HIL_SENSOR: t=6268000 accX=6.94 accZ=-6.94 baro=-0.03 altGps=0.00 velDGps=0, fields_updated=1535
+HIL_SENSOR: t=6276000 accX=6.94 accZ=-6.94 baro=-0.03 altGps=0.00 velDGps=0, fields_updated=1087
+HIL_SENSOR: t=6284000 accX=6.94 accZ=-6.94 baro=-0.10 altGps=0.00 velDGps=0, fields_updated=8191
+HIL_SENSOR: t=6292000 accX=6.94 accZ=-6.94 baro=-0.10 altGps=0.00 velDGps=0, fields_updated=1087
+HIL_SENSOR: t=6300000 accX=6.94 accZ=-6.94 baro=-0.10 altGps=0.00 velDGps=0, fields_updated=1535
+HIL_SENSOR: t=6308000 accX=6.94 accZ=-6.94 baro=-0.10 altGps=0.00 velDGps=0, fields_updated=1087
+HIL_SENSOR: t=6316000 accX=6.94 accZ=-6.94 baro=-0.10 altGps=0.00 velDGps=0, fields_updated=1535
+HIL_SENSOR: t=6324000 accX=6.94 accZ=-6.94 baro=-0.10 altGps=0.00 velDGps=0, fields_updated=1087
+HIL_SENSOR: t=6332000 accX=6.94 accZ=-6.94 baro=-0.10 altGps=0.00 velDGps=0, fields_updated=1535
+HIL_SENSOR: t=6340000 accX=6.94 accZ=-6.94 baro=-0.13 altGps=0.00 velDGps=0, fields_updated=7743
+HIL_SENSOR: t=6348000 accX=6.94 accZ=-6.94 baro=-0.13 altGps=0.00 velDGps=0, fields_updated=1535
+HIL_SENSOR: t=6356000 accX=6.94 accZ=-6.94 baro=-0.13 altGps=0.00 velDGps=0, fields_updated=1087

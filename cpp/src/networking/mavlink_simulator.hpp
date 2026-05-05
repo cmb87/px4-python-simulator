@@ -15,8 +15,8 @@ public:
     void send_system_time(uint64_t sim_time_us);
     void send_hil_sensor(uint64_t sim_time_us, const sensors::SensorSuite::SensorOutputs& sensors, bool has_airspeed_sensor);
     
-    // Updated to use ground truth for better estimator stability
-    void send_hil_state_quaternion(uint64_t sim_time_us, const Eigen::VectorXd& y, const Eigen::Vector3d& vel_ned, double ias, double tas, double gt_lat, double gt_lon, double gt_alt, const Eigen::Vector3d& acc_body);
+    // acc_meas must be Specific Force (accelerometer output), not inertial acceleration
+    void send_hil_state_quaternion(uint64_t sim_time_us, const Eigen::VectorXd& y, const Eigen::Vector3d& vel_ned, double ias, double tas, double gt_lat, double gt_lon, double gt_alt, const Eigen::Vector3d& acc_meas);
     
     void send_hil_gps(uint64_t sim_time_us, const sensors::SensorSuite::SensorOutputs& sensors);
 

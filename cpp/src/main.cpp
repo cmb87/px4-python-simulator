@@ -279,7 +279,7 @@ int main() {
             // HIL_STATE_QUATERNION
             int32_t hil_state_interval = mav_interface.get_hil_state_interval_us();
             if (hil_state_interval > 0 && sim_time_us >= next_hil_state_time_us) {
-                mav_sim.send_hil_state_quaternion(sim_time_us, state.y, vel_ned, va, va, gt_lat, gt_lon, gt_alt, accel_body);
+                mav_sim.send_hil_state_quaternion(sim_time_us, state.y, vel_ned, va, va, gt_lat, gt_lon, gt_alt, s_out.accel);
                 next_hil_state_time_us = sim_time_us + (hil_state_interval > 0 ? hil_state_interval : 0);
             }
 
