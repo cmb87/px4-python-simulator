@@ -5,6 +5,7 @@
 #include <cmath>
 #include <memory>
 #include <cstdlib>
+#include <algorithm>
 
 #include "x8/parameters.hpp"
 #include "x8/forces.hpp"
@@ -141,21 +142,18 @@ int main() {
 
     networking::MavlinkInterface mav_interface;
     networking::MavlinkSimulator mav_sim(mav_interface);
-    std::atomic<bool> controls_received{false};
     std::atomic<bool> armed{false};
-    std::atomic<bool> ever_armed{false};
+    bool was_armed = false;
+    bool ever_armed = false;
+    std::array<float, 16> latest_controls{};
+    bool has_latest_controls = false;
     
     mav_interface.set_on_controls([&](const mavlink_hil_actuator_controls_t& controls) {
-        u[0] = controls.controls[0]; 
-        u[1] = controls.controls[1]; 
-        u[2] = controls.controls[2]; 
-        u[3] = controls.controls[3]; 
-        
-        armed = (controls.mode & MAV_MODE_FLAG_SAFETY_ARMED) != 0;
-        if (armed) {
-            ever_armed = true;
+        for (size_t i = 0; i < latest_controls.size(); ++i) {
+            latest_controls[i] = controls.controls[i];
         }
-        controls_received = true;
+        has_latest_controls = true;
+        armed = (controls.mode & MAV_MODE_FLAG_SAFETY_ARMED) != 0;
     });
 
     try {
@@ -172,15 +170,27 @@ int main() {
     }
     
     uint8_t px4_sysid = mav_interface.get_target_system();
-    const uint8_t sim_sysid = 42;
+    const uint8_t sim_sysid = px4_sysid > 0 ? px4_sysid : 42;
     mav_interface.set_source_system(sim_sysid);
     std::cout << "PX4 detected! SYSID=" << (int)px4_sysid << ". Starting simulation loop." << std::endl;
 
     uint64_t sim_time_us = 0;
     const int check_factor = 2;
-    const uint64_t physics_dt_us = 8000;
+    const uint64_t dt_us = 4000;
     const uint64_t loop_dt_us = 4000;
     const uint64_t gps_start_time_us = 1000000;
+    const uint64_t heartbeat_interval_us = 1000000;
+    const uint64_t system_time_interval_us = 1000000;
+
+    const bool catapult_enabled = params.rail_launch_enabled;
+    double catapult_countdown_s = 3.0;
+    if (const char* c = std::getenv("SIM_CATAPULT_LAUNCH_COUNTDOWN_S")) {
+        catapult_countdown_s = std::max(0.0, std::atof(c));
+    }
+    const uint64_t catapult_countdown_us = static_cast<uint64_t>(catapult_countdown_s * 1e6);
+    bool catapult_countdown_active = false;
+    uint64_t catapult_release_time_us = 0;
+    uint64_t next_countdown_announce_us = 0;
 
     uint64_t last_heartbeat_time_us = 0;
     uint64_t last_system_time_us = 0;
@@ -196,17 +206,62 @@ int main() {
         auto step_start_time = std::chrono::steady_clock::now();
         
         bool io_run_only = (slow_down_counter % check_factor) != 0;
+        bool needs_to_pause = io_run_only;
 
-        if (!io_run_only) {
-            sim_time_us += physics_dt_us;
+        sim_time_us += dt_us;
+
+        const bool armed_now = armed.load();
+        if (armed_now && !was_armed) {
+            ever_armed = true;
+            if (catapult_enabled && catapult_countdown_us > 0) {
+                catapult_countdown_active = true;
+                catapult_release_time_us = sim_time_us + catapult_countdown_us;
+                next_countdown_announce_us = sim_time_us;
+                std::cout << "ARM transition: catapult launch in " << catapult_countdown_s << " s" << std::endl;
+            }
+        }
+        if (!armed_now && was_armed) {
+            if (catapult_countdown_active) {
+                catapult_countdown_active = false;
+                catapult_release_time_us = 0;
+                std::cout << "Catapult countdown cancelled (disarmed)" << std::endl;
+            }
+        }
+        was_armed = armed_now;
+
+        if (catapult_countdown_active) {
+            if (sim_time_us >= catapult_release_time_us) {
+                catapult_countdown_active = false;
+                catapult_release_time_us = 0;
+                std::cout << "Catapult launch release" << std::endl;
+            } else if (sim_time_us >= next_countdown_announce_us) {
+                double remaining_s = std::max(0.0, static_cast<double>(catapult_release_time_us - sim_time_us) / 1e6);
+                std::cout << "Catapult countdown: " << remaining_s << " s" << std::endl;
+                next_countdown_announce_us = sim_time_us + 1000000;
+            }
+        }
+
+        if (!armed_now || !has_latest_controls) {
+            u.setZero();
+        } else {
+            u[0] = latest_controls[0];
+            u[1] = latest_controls[1];
+            u[2] = latest_controls[2];
+            u[3] = std::clamp(static_cast<double>(latest_controls[3]), 0.0, 1.0);
+        }
+
+        if (!needs_to_pause) {
 
             // 1. Calculate forces and ydot (before integrator step for temporal consistency)
             Eigen::Matrix<double, 6, 1> wind_6d = Eigen::Matrix<double, 6, 1>::Zero();
             Eigen::VectorXd tau = Eigen::VectorXd::Zero(6);
             Eigen::VectorXd ydot = Eigen::VectorXd::Zero(13);
 
-            if (ever_armed) {
-                tau = vehicle->calculate_forces(sim_time_us * 1e-6, 0.008, state.y, u, wind_6d);
+            const bool freeze_for_countdown = catapult_enabled && catapult_countdown_active;
+            const bool freeze_dynamics = (!ever_armed) || freeze_for_countdown;
+
+            if (!freeze_dynamics) {
+                tau = vehicle->calculate_forces(sim_time_us * 1e-6, dt_us * 1e-6, state.y, u, wind_6d);
                 
                 if (params.rail_launch_enabled && !params.left_rail) {
                     tau += rail_forces(state.y, params);
@@ -215,7 +270,7 @@ int main() {
                     auto rail_func = [&](double t, const Eigen::VectorXd& y) {
                         return dynamics::rail_dynamics(t, y, params, tau);
                     };
-                    state.y = dynamics::IntegratorEuler::step(sim_time_us * 1e-6, 0.008, state.y, rail_func);
+                    state.y = dynamics::IntegratorEuler::step(sim_time_us * 1e-6, dt_us * 1e-6, state.y, rail_func);
                     state.y.segment<4>(3) = rail_alignment_quaternion_wxyz(params);
                     state.y.segment<3>(10).setZero();
                 } else {
@@ -224,7 +279,7 @@ int main() {
                     auto dynamics_func = [&](double t, const Eigen::VectorXd& y) {
                         return dynamics::dynamics_6dof(t, y, params, tau);
                     };
-                    state.y = dynamics::IntegratorEuler::step(sim_time_us * 1e-6, 0.008, state.y, dynamics_func);
+                    state.y = dynamics::IntegratorEuler::step(sim_time_us * 1e-6, dt_us * 1e-6, state.y, dynamics_func);
                     state.y.segment<4>(3).normalize();
                 }
 
@@ -299,9 +354,18 @@ int main() {
                 }
 
                 nlohmann::json j;
-                j["system_id"] = (int)sim_sysid;
+                j["system_id"] = (int)px4_sysid;
                 j["time_usec"] = sim_time_us;
-                j["u"] = {u[0], u[1], u[2], u[3], 0.0, 0.0, 0.0, 0.0}; 
+                j["u"] = {
+                    has_latest_controls ? latest_controls[0] : 0.0,
+                    has_latest_controls ? latest_controls[1] : 0.0,
+                    has_latest_controls ? latest_controls[2] : 0.0,
+                    has_latest_controls ? latest_controls[3] : 0.0,
+                    has_latest_controls ? latest_controls[4] : 0.0,
+                    has_latest_controls ? latest_controls[5] : 0.0,
+                    has_latest_controls ? latest_controls[6] : 0.0,
+                    has_latest_controls ? latest_controls[7] : 0.0,
+                };
                 j["position_ned_m"] = {state.y[0], state.y[1], state.y[2]};
                 j["quaternion_wxyz"] = {state.y[3], state.y[4], state.y[5], state.y[6]};
                 j["velocity_body_mps"] = {state.y[7], state.y[8], state.y[9]};
@@ -326,12 +390,12 @@ int main() {
 
         // ALWAYS (every 4ms):
         // Heartbeat and System Time logic
-        if (sim_time_us >= last_heartbeat_time_us + 1000000) {
+        if (sim_time_us >= last_heartbeat_time_us + heartbeat_interval_us) {
             mav_sim.send_heartbeat();
             last_heartbeat_time_us = sim_time_us;
         }
 
-        if (sim_time_us >= last_system_time_us + 1000000) {
+        if (sim_time_us >= last_system_time_us + system_time_interval_us) {
             mav_sim.send_system_time(sim_time_us);
             last_system_time_us = sim_time_us;
         }
@@ -349,4 +413,3 @@ int main() {
 
     return 0;
 }
-
