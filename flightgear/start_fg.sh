@@ -11,13 +11,9 @@ nice "$APPIMAGE" \
   --fdm=external \
   --aircraft=CameraRascal \
   --fg-aircraft="${AIRCRAFT_PATH}/aircraft" \
-  #--lat=47.397742 \
-  #--lon=8.545594 \
-  #--altitude=488 \
-    --lat=48.35386539065191 \
-    --lon=11.78159133408772 \
-    --altitude=447 \
-
+  --lat=48.35386539065191 \
+  --lon=11.78159133408772 \
+  --altitude=447 \
   --geometry="${FG_WIDTH}x${FG_HEIGHT}" \
   --bpp=32 \
   --max-fps=30 \
