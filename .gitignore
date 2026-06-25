@@ -4,6 +4,7 @@
 *.pyc
 *~
 .*.swp
+.AppImage
 .context
 .cproject
 .DS_Store
