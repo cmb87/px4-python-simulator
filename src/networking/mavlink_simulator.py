@@ -14,6 +14,17 @@ HIL_SENSOR_DIFF_PRESSURE_UPDATED = 0x400
 HIL_SENSOR_BARO_ALT_UPDATED = 0x800
 HIL_SENSOR_BARO_TEMP_UPDATED = 0x1000
 
+
+def clip_int16(val: float) -> int:
+    """Clips a float value to the signed 16-bit integer range [-32768, 32767]."""
+    return int(max(-32768, min(32767, round(val))))
+
+
+def clip_uint16(val: float) -> int:
+    """Clips a float value to the unsigned 16-bit integer range [0, 65535]."""
+    return int(max(0, min(65535, round(val))))
+
+
 class MavlinkSimulator:
     def __init__(self, conn):
         self.conn = conn
@@ -54,12 +65,7 @@ class MavlinkSimulator:
         static_pressure_pa = float(baro["staticAbsolute"])
         pressure_alt = 44330.0 * (1.0 - (static_pressure_pa / 101325.0)**(1.0 / 5.25588))
 
-
         gps = np.asarray(sensors["gps"], dtype=float)
-
-        vel_down = float(-gps[5])
-        
-        #print(f"HIL_SENSOR: t={sim_time_us} accX={acc[0]:.2f} accZ={acc[2]:.2f} baro={pressure_alt-447.0:.2f} altGps={float(gps[2])-447.0:.2f} velDGps={int(round(vel_down ))}, fields_updated={fields_updated}")
 
         self.conn.mav.hil_sensor_send(
             int(sim_time_us),
@@ -98,14 +104,14 @@ class MavlinkSimulator:
             int(round(float(gps[0]) * 1e7)),
             int(round(float(gps[1]) * 1e7)),
             int(round(float(gps[2]) * 1000.0)),
-            int(round(vel_north * 100.0)),
-            int(round(vel_east * 100.0)),
-            int(round(vel_down * 100.0)),
-            int(round(horiz_speed_m_s * 100.0)),
-            int(round(horiz_speed_m_s * 100.0)),
-            int(round(float(acc[0]) * m_s2_to_mg)),
-            int(round(float(acc[1]) * m_s2_to_mg)),
-            int(round(float(acc[2]) * m_s2_to_mg)),
+            clip_int16(vel_north * 100.0),
+            clip_int16(vel_east * 100.0),
+            clip_int16(vel_down * 100.0),
+            clip_uint16(horiz_speed_m_s * 100.0),
+            clip_uint16(horiz_speed_m_s * 100.0),
+            clip_int16(float(acc[0]) * m_s2_to_mg),
+            clip_int16(float(acc[1]) * m_s2_to_mg),
+            clip_int16(float(acc[2]) * m_s2_to_mg),
         )
 
     def send_hil_gps(self, sim_time_us, sensors):
@@ -126,11 +132,11 @@ class MavlinkSimulator:
             int(round(float(gps[2]) * 1000.0)),
             100,
             100,
-            int(round(vel_3d * 100.0)),
-            int(round(vel_north * 100.0)),
-            int(round(vel_east * 100.0)),
-            int(round(vel_down * 100.0)),
-            int(round(np.degrees(cog_rad) * 100.0)),
+            clip_uint16(vel_3d * 100.0),
+            clip_int16(vel_north * 100.0),
+            clip_int16(vel_east * 100.0),
+            clip_int16(vel_down * 100.0),
+            clip_uint16(np.degrees(cog_rad) * 100.0),
             10,
             0,
             0,
