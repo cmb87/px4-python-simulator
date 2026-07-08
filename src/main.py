@@ -98,6 +98,36 @@ def simulation_main() -> None:
     origin_lon_deg = float(gps_origin.get("lon", DEFAULT_GPS_ORIGIN["lon"]))
     origin_alt_m = float(gps_origin.get("alt", DEFAULT_GPS_ORIGIN["alt"]))
 
+    # Override GPS starting origin from environment variables if set
+    env_lat = os.getenv("SIM_GPS_ORIGIN_LAT")
+    env_lon = os.getenv("SIM_GPS_ORIGIN_LON")
+    env_alt = os.getenv("SIM_GPS_ORIGIN_ALT")
+    if env_lat is not None:
+        try:
+            origin_lat_deg = float(env_lat)
+            logger.info("Overriding GPS Origin Latitude from environment: %s", origin_lat_deg)
+        except ValueError:
+            logger.warning("Invalid SIM_GPS_ORIGIN_LAT: '%s', ignoring override.", env_lat)
+    if env_lon is not None:
+        try:
+            origin_lon_deg = float(env_lon)
+            logger.info("Overriding GPS Origin Longitude from environment: %s", origin_lon_deg)
+        except ValueError:
+            logger.warning("Invalid SIM_GPS_ORIGIN_LON: '%s', ignoring override.", env_lon)
+    if env_alt is not None:
+        try:
+            origin_alt_m = float(env_alt)
+            logger.info("Overriding GPS Origin Altitude from environment: %s", origin_alt_m)
+        except ValueError:
+            logger.warning("Invalid SIM_GPS_ORIGIN_ALT: '%s', ignoring override.", env_alt)
+
+    # Write back the overridden coordinates to world.P.gps_origin so sensors pick them up
+    world.P.gps_origin = {
+        "lat": origin_lat_deg,
+        "lon": origin_lon_deg,
+        "alt": origin_alt_m,
+    }
+
     gt_ws = GroundTruthWebSocketPublisher(host=GT_WS_HOST, port=GT_WS_PORT, enabled=(gt_output_mode == "websocket"))
     gt_ws.start()
     fg_udp: FlightGearUdpPublisher | None = None
