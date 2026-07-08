@@ -32,4 +32,7 @@ py-modules = ["main", "dummy_ground_truth_ws_publisher", "sim_utils"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["vehicle*", "visualizer*", "guidance*"]
+include = ["vehicle*", "visualizer*", "guidance*", "dynamics*", "sensor*", "networking*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.csv", "*.dat"]

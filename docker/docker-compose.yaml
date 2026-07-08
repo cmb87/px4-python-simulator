@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  simulator:
+    image: px4-python-simulator:latest
+    container_name: px4-python-simulator
+    # Note: Running in "host" network mode allows easy integration with locally-running PX4 instances,
+    # companion computers, or FlightGear streams without manually exposing multiple port mappings.
+    network_mode: "host"
+    restart: unless-stopped
+    environment:
+      # --- Vehicle Model ---
+      # Options: x8, ts06, etc.
+      - SIM_VEHICLE_MODEL=ts06
+
+      # --- GPS Starting Origin ---
+      # Overrides the default starting position of the vehicle
+      - SIM_GPS_ORIGIN_LAT=47.397742
+      - SIM_GPS_ORIGIN_LON=8.545594
+      - SIM_GPS_ORIGIN_ALT=488.0
+
+      # --- Ground-Truth Connectors Configuration ---
+      # Options: websocket, flightgear_udp, off
+      - SIM_GT_OUTPUT_MODE=websocket
+      - SIM_GT_OUTPUT_RATE_HZ=30.0
+
+      # Ground Truth WebSocket publisher details (if output mode is 'websocket')
+      - SIM_GT_WS_HOST=0.0.0.0
+      - SIM_GT_WS_PORT=8765
+
+      # FlightGear UDP target details (if output mode is 'flightgear_udp')
+      - SIM_FG_UDP_HOST=127.0.0.1
+      - SIM_FG_UDP_PORT=5503
+
+      # --- MAVLink Simulator TCP Bind Details ---
+      # Tells the simulator where to listen for incoming MAVLink connections (usually from PX4 SITL)
+      - SIM_MAVLINK_BIND_HOST=0.0.0.0
+      - SIM_MAVLINK_BIND_PORT=4560
+
+      # --- General Settings ---
+      - SIM_LOG_LEVEL=INFO
