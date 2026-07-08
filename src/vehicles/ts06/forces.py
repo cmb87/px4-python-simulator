@@ -93,7 +93,7 @@ def forces(t, y, u, wind, P, alpha_override=None, beta_override=None):
     for i in range(4):
         r_motor = np.array([P.x_motors[i], P.y_motors[i], P.z_motors[i]], dtype=float)
         v_motor_body = vel_r + np.cross(rates_winded, r_motor)
-        v_a_motor = vel_r[0]  # Forward airspeed seen by propeller
+        v_a_motor = v_motor_body[0]  # Forward airspeed seen by propeller
 
         throttle_i = np.clip(u_motors[i], 0.0, 1.0)
         v_d_motor = v_a_motor + throttle_i * (P.k_motor - v_a_motor)

@@ -6,8 +6,6 @@ from typing import Any, Callable, Mapping
 import numpy as np
 
 from .iris import definition as iris
-from .fwlm import definition as fwlm
-from .ts04 import definition as ts04
 from .ts06 import definition as ts06
 from .x8 import definition as x8
 
@@ -33,23 +31,11 @@ VEHICLES: dict[str, VehicleDefinition] = {
         make_force_models=iris.make_force_models,
         make_initial_state=iris.make_initial_state,
     ),
-    "ts04": VehicleDefinition(
-        name="ts04",
-        make_parameters=ts04.make_parameters,
-        make_force_models=ts04.make_force_models,
-        make_initial_state=ts04.make_initial_state,
-    ),
     "ts06": VehicleDefinition(
         name="ts06",
         make_parameters=ts06.make_parameters,
         make_force_models=ts06.make_force_models,
         make_initial_state=ts06.make_initial_state,
-    ),
-    "fwlm": VehicleDefinition(
-        name="fwlm",
-        make_parameters=fwlm.make_parameters,
-        make_force_models=fwlm.make_force_models,
-        make_initial_state=fwlm.make_initial_state,
     ),
 }
 
