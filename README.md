@@ -71,7 +71,6 @@ Default models:
 
 - `x8`
 - `iris`
-- `ts04`
 
 `vehicle/world.py` is model-agnostic: it resolves parameters, force models, and default initial state via the vehicle catalog.
 
