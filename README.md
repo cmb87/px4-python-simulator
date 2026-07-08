@@ -200,3 +200,9 @@ Example (FlightGear UDP output):
 Model selection example:
 
 - `SIM_VEHICLE_MODEL=iris python src/main.py`
+
+
+# Interactive Websocket visualization
+
+Go to https://cmb87.github.io/ and connect the simulator via websocket
+

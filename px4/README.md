@@ -64,3 +64,4 @@ for convience.
 
 Go to **https://cmb87.github.io/** and select the simulator tab. Connect via websocket to the simulator and enjoy. Note the websocket must be activated (it is when you start with start_ts06_websocket.sh).
 
+
