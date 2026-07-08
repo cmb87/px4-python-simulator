@@ -28,7 +28,7 @@ px4-python-sitl = "main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["main", "transfer_alignment", "dummy_ground_truth_ws_publisher", "sim_utils"]
+py-modules = ["main", "dummy_ground_truth_ws_publisher", "sim_utils"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

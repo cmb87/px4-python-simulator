@@ -24,7 +24,7 @@
 This document describes the simulation kernel and interfaces implemented in the repository:
 \begin{itemize}
     \item 6DOF rigid-body kernel and integration flow,
-    \item vehicle model parameterizations (\texttt{x8}, \texttt{iris}, \texttt{ts04}),
+    \item vehicle model parameterizations (\texttt{x8}, \texttt{iris}, \texttt{ts06}),
     \item force and moment models per vehicle,
     \item sensor models (IMU, magnetometer, barometer, GPS),
     \item communication with PX4 over MAVLink and with external programs over UDP/WebSocket.
@@ -105,7 +105,7 @@ $\nu_\cdot,\xi_\cdot$ & GPS position and velocity noise terms & zero mean, confi
 
 \section{Simulation Kernel}
 \subsection{Short Introduction}
-The rigid-body kernel in \texttt{src/vehicle/dynamics.py} evolves the 13-state vector under the summed body-frame force and moment input and gravity.
+The rigid-body kernel in \texttt{src/dynamics/dynamics.py} evolves the 13-state vector under the summed body-frame force and moment input and gravity.
 Figure \ref{fig:ned_frd} introduces the coordinate conventions used by the equations: world frame NED (North-East-Down) and body frame FRD (Forward-Right-Down).
 
 \begin{figure}[ht]
@@ -170,7 +170,7 @@ a_{ned,D} &\leftarrow \min(a_{ned,D},0).
 The clamped NED velocity and acceleration are reprojected to body-frame derivatives used by the integrator.
 
 \subsubsection{Catapult-Constrained Start Mode}
-When catapult start is enabled, \texttt{World} temporarily replaces free 6DOF with a rail-constrained kernel from \texttt{src/vehicle/dynamics.py} (function \texttt{rail\_dynamics}), while catapult pull force is computed in \texttt{src/vehicle/vehicles/common\_forces/catapult\_rail.py}. Let $\hat r_{rail}^{ned}$ be the unit rail direction and $p_{rail,0}^{ned}$ the rail start point.
+When catapult start is enabled, \texttt{World} temporarily replaces free 6DOF with a rail-constrained kernel from \texttt{src/dynamics/dynamics.py} (function \texttt{rail\_dynamics}), while catapult pull force is computed in \texttt{src/vehicles/common\_forces/catapult\_rail.py}. Let $\hat r_{rail}^{ned}$ be the unit rail direction and $p_{rail,0}^{ned}$ the rail start point.
 
 Rail progress and switch condition:
 \begin{align}
@@ -255,10 +255,10 @@ Communication of simulated sensor and state outputs to PX4 (and integration hook
 \end{verbatim}
 
 \section{Sensor Models}
-Sensor synthesis is implemented in \texttt{src/vehicle/sensors/sensors.py}. Noise is enabled by default for IMU, magnetometer, GPS, and barometer.
+Sensor synthesis is implemented in \texttt{src/sensors/sensors.py}. Noise is enabled by default for IMU, magnetometer, GPS, and barometer.
 
 \subsection{IMU (Accelerometer + Gyroscope)}
-The IMU model in \texttt{src/vehicle/sensors/imu.py} converts state and state derivative into specific-force and angular-rate measurements with LPF, bias dynamics, and additive noise.
+The IMU model in \texttt{src/sensors/imu.py} converts state and state derivative into specific-force and angular-rate measurements with LPF, bias dynamics, and additive noise.
 
 \subsubsection*{Readable Derivation}
 \paragraph{1) Frames and core inertial quantities}
@@ -361,7 +361,7 @@ These channels feed accelerometer and gyroscope fields in \texttt{HIL\_SENSOR}.
 \end{itemize}
 
 \subsection{Magnetometer}
-The magnetometer model in \texttt{src/vehicle/sensors/magnetometer.py} rotates Earth magnetic field from NED to body frame and applies calibration and stochastic terms.
+The magnetometer model in \texttt{src/sensors/magnetometer.py} rotates Earth magnetic field from NED to body frame and applies calibration and stochastic terms.
 
 \subsubsection*{Readable Derivation}
 \paragraph{1) Field mapping from NED to body}
@@ -432,7 +432,7 @@ Gate:    none (no next_update_us gate in MagnetometerSim).
 \end{itemize}
 
 \subsection{Barometer}
-The barometer model in \texttt{src/vehicle/sensors/barometer.py} converts simulated altitude into pressure with ISA relations and adds drift and noise.
+The barometer model in \texttt{src/sensors/barometer.py} converts simulated altitude into pressure with ISA relations and adds drift and noise.
 
 \subsubsection*{Readable Derivation}
 \paragraph{1) Altitude to ideal static pressure}
@@ -527,7 +527,7 @@ Gate:    none (no next_update_us gate in BarometerSensor).
 \end{itemize}
 
 \subsection{GPS}
-The GPS model in \texttt{src/vehicle/sensors/gps.py} perturbs local NED position and velocity with random walk and white noise, then reprojects position to geodetic coordinates around the configured origin.
+The GPS model in \texttt{src/sensors/gps.py} perturbs local NED position and velocity with random walk and white noise, then reprojects position to geodetic coordinates around the configured origin.
 
 \subsubsection*{Readable Derivation}
 \paragraph{1) Stochastic NED position states}
@@ -607,7 +607,7 @@ Gate:    if t_us < next_update_us, return last sample and gps_updated=false.
 \end{itemize}
 
 \section{Vehicle Models}
-Vehicle parameters are declared per vehicle in \texttt{src/vehicle/vehicles/*/parameters.py}.
+Vehicle parameters are declared per vehicle in \texttt{src/vehicles/*/parameters.py}.
 
 \subsection{Iris (Multicopter)}
 \texttt{IrisParameters} defines mass, inertia, motor, and passive drag terms. The currently used stable defaults are:
@@ -619,8 +619,8 @@ Vehicle parameters are declared per vehicle in \texttt{src/vehicle/vehicles/*/pa
 \subsubsection*{Force and Moment Models}
 The Iris model uses two force components:
 \begin{itemize}
-    \item \texttt{IrisQuadForceModel} in \texttt{src/vehicle/vehicles/iris/forces.py}: active rotor thrust and reaction torque,
-    \item \texttt{PassiveSphereAeroForceModel} in \texttt{src/vehicle/vehicles/common\_forces/passive\_sphere\_aero.py}: passive drag.
+    \item \texttt{IrisQuadForceModel} in \texttt{src/vehicles/iris/forces.py}: active rotor thrust and reaction torque,
+    \item \texttt{PassiveSphereAeroForceModel} in \texttt{src/vehicles/common\_forces/passive\_sphere\_aero.py}: passive drag.
 \end{itemize}
 Rotor moments include arm-induced moments, spin-direction reaction torque, and rotor gyroscopic coupling.
 
@@ -628,27 +628,27 @@ Rotor moments include arm-induced moments, spin-direction reaction torque, and r
 \texttt{X8Parameters} provides aerodynamic derivatives for lift, drag, side force, and moments, plus propulsive and geometric terms.
 
 \subsubsection*{Force and Moment Models}
-The X8 model uses \texttt{WingX8ForceModel} in \texttt{src/vehicle/vehicles/x8/forces.py}. It computes aerodynamic forces from angle of attack/sideslip and aerodynamic derivatives, then adds propulsion force and moment.
+The X8 model uses \texttt{WingX8ForceModel} in \texttt{src/vehicles/x8/forces.py}. It computes aerodynamic forces from angle of attack/sideslip and aerodynamic derivatives, then adds propulsion force and moment.
 
-\subsection{TS04 (VTOL)}
-\texttt{TS04Parameters} defines tilted rotor geometry and hybrid passive aerodynamics (sphere + wing blend).
+\subsection{TS06 (VTOL)}
+\texttt{Ts06Parameters} defines physical, sensor, aerodynamic, and motor-propulsion properties of the VTOL quad-tailsitter vehicle model.
 
 \subsubsection*{Force and Moment Models}
-The TS04 model uses:
+The TS06 model uses \texttt{Ts06ForceModel} in \texttt{src/vehicles/ts06/forces.py}, which implements:
 \begin{itemize}
-    \item \texttt{TS04ForceModel} in \texttt{src/vehicle/vehicles/ts04/forces.py}: active motor thrust, reaction torque, and gyroscopic terms,
-    \item \texttt{TS04BlendedPassiveAeroForceModel} in \texttt{src/vehicle/vehicles/ts04/forces.py}: blend of sphere drag and wing-like passive aerodynamics.
+    \item \textbf{CFD-based Aerodynamics Lookup}: Performs lookup in a multi-dimensional CFD-derived table (\texttt{aerodynamics\_table.csv} via \texttt{aero\_lookup.py}) using low-pass filtered angle of attack ($\alpha$) and sideslip ($\beta$) within a nominal envelope ($\pm 15^\circ$). Dynamic rate damping moments are computed using reference dimensions and aerodynamic rate-damping coefficients ($C_{l_p}$, $C_{m_q}$, $C_{n_r}$).
+    \item \textbf{Four-Motor Propulsion}: Active thrust, reaction torque, and geometric moment arm for four vertical/forward-facing brushless DC motors, accounting for local motor position, rotation direction (CW/CCW), and forward speed seen by each propeller.
 \end{itemize}
 
 \subsection{How to Add a New Vehicle}
-Add a new folder under \texttt{src/vehicle/vehicles/} (for example \texttt{my\_uav/}) with:
+Add a new folder under \texttt{src/vehicles/} (for example \texttt{my\_uav/}) with:
 \begin{itemize}
     \item \texttt{parameters.py}: mass, inertia, sensor terms, and optional rail launch defaults,
     \item \texttt{forces.py}: vehicle-specific force/moment models,
     \item \texttt{initial\_state.py}: startup state builder,
     \item \texttt{definition.py}: \texttt{make\_parameters()}, \texttt{make\_force\_models(parameters)}, \texttt{make\_initial\_state(config)}.
 \end{itemize}
-Then register the vehicle in \texttt{src/vehicle/vehicle\_catalog.py} by adding one \texttt{VEHICLES} entry.
+Then register the vehicle in \texttt{src/vehicles/vehicle_catalog.py} by adding one \texttt{VEHICLES} entry.
 
 \subsection{Vehicle Options}
 \subsubsection{Catapult Start Parameters (Per Vehicle)}
@@ -732,7 +732,7 @@ t_{k+1} = t_k + \Delta t, \quad \Delta t = \frac{1}{\text{RATE\_HZ}}.
 \end{equation}
 
 \subsection{Ground Truth WebSocket}
-\texttt{src/visualizer/websockerPublisher.py} streams JSON ground-truth state for external visualizers and analysis tools.
+\texttt{src/networking/websocket_publisher.py} streams JSON ground-truth state for external visualizers and analysis tools.
 
 \section{Python Installation and Interaction}
 \subsection{Install}
@@ -769,7 +769,7 @@ print(out["sensors"])   # synthesized sensors
 \subsection{External Program Interfaces}
 \begin{itemize}
     \item MAVLink HIL I/O via \texttt{src/main.py}.
-    \item Ground-truth WebSocket via \texttt{src/visualizer/websockerPublisher.py}.
+    \item Ground-truth WebSocket via \texttt{src/networking/websocket_publisher.py}.
 \end{itemize}
 
 \section{Build and Use}

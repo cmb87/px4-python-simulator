@@ -25,7 +25,7 @@ class Ts06Parameters:
 
         ## Wing Properties
         # FRD distances rel to CG (Can be overridden via environment variables)
-        self.x_wing = -0.033
+        self.x_wing = -0.60
         self.y_wing =  0.0
         self.z_wing = -0.04
 
@@ -41,20 +41,17 @@ class Ts06Parameters:
         self.z_motors = [-0.205/2, 0.205/2, -0.205/2, 0.205/2]  # [TopRight, BottomLeft, TopLeft, BottomRight]
         self.dir_motors = [1, 1, -1, -1]                        # 1 = CCW, -1 = CW
 
-        self.C_l_p = -1.5  # roll damping
-        self.C_m_q = -8.0  # pitch damping
-        self.C_n_r = -4.2  # yaw damping
+        self.C_l_p = -0.5  # roll damping
+        self.C_m_q = -0.5  # pitch damping
+        self.C_n_r = -0.5  # yaw damping
 
-       # self.C_l_p = -0.2  # roll damping
-       # self.C_m_q = -8.2  # pitch damping
-       # self.C_n_r = -0.2  # yaw damping
 
         self.S_prop = 0.10178760197630929
 
-        self.k_motor = 50
-        self.k_T_P = 0.02 # Torque-to-thrust ratio (Newton-meters of torque per Newton of thrust)
-        self.k_Omega = 0.001/2
-        self.C_prop = 1
+        self.k_motor = 38
+        self.k_T_P = 0.03 # Torque-to-thrust ratio (Newton-meters of torque per Newton of thrust)
+        self.k_Omega = 0.001
+        self.C_prop = 1.0
 
 
 
@@ -80,4 +77,4 @@ class Ts06Parameters:
         self.rail_start_ned = np.asarray([0.0, 0.0, 0.0], dtype=float)
         self.left_rail = False
         self.rail_length = 2.01
-        self.rail_pull_max = 20.1
+        self.rail_pull_max = 10.1
