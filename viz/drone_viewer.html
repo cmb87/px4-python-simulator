@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>multi-UAV sim — live viewer</title>
+<style>
+  :root{
+    --bg:#0a0f1e; --panel:#111a30; --panel2:#0d1526; --grid:#1f2b47;
+    --ink:#c8d3e6; --muted:#6b7a99; --accent:#22d3ee; --hair:#20304f; --tgt:#ef4444;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)}
+  .wrap{min-height:100vh;padding:clamp(10px,2vw,22px);display:flex;flex-direction:column;gap:12px}
+  header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px}
+  h1{font-size:clamp(16px,2vw,21px);font-weight:650;margin:0;letter-spacing:-0.01em}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 2px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;margin-left:auto}
+  .lg{display:flex;align-items:center;gap:5px;color:var(--muted)} .dot{width:9px;height:9px;border-radius:50%}
+  .panels{display:grid;grid-template-columns:3fr 2fr;gap:12px}
+  @media(max-width:900px){.panels{grid-template-columns:1fr}}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--hair);
+    border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+  .panel h2{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0;font-weight:500;display:flex;gap:10px}
+  .panel h2 .hint{margin-left:auto;text-transform:none;letter-spacing:0;color:#3d4d70}
+  canvas{width:100%;height:auto;display:block;border-radius:6px;background:var(--panel2);touch-action:none}
+  .bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:10px 14px}
+  button{font-family:var(--mono);font-size:12.5px;background:var(--accent);color:#04121a;border:0;border-radius:7px;padding:7px 14px;cursor:pointer;font-weight:600}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid var(--hair)}
+  button[aria-pressed=true]{background:var(--accent);color:#04121a;border-color:var(--accent)}
+  button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+  input[type=range]{flex:1;min-width:140px;accent-color:var(--accent)}
+  input[type=text]{font-family:var(--mono);font-size:12.5px;background:var(--panel2);color:var(--ink);border:1px solid var(--hair);border-radius:7px;padding:7px 10px;width:220px}
+  .readout{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;display:flex;gap:14px;flex-wrap:wrap}
+  .readout b{color:var(--muted);font-weight:500}
+  .status{font-family:var(--mono);font-size:12px;padding:3px 9px;border-radius:99px;border:1px solid var(--hair);color:var(--muted)}
+  .status.live{color:#34d399;border-color:#14532d;background:#052e1a}
+  .status.err{color:#f87171;border-color:#7f1d1d}
+  .spd{display:flex;gap:4px}
+  .spd button{background:transparent;color:var(--muted);border:1px solid var(--hair);padding:5px 9px}
+  .small{font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">multi-UAV PX4 sim</p>
+      <h1>Live viewer <span class="small" id="srcLabel"></span></h1>
+    </div>
+    <div class="legend" id="legend"></div>
+  </header>
+
+  <div class="bar">
+    <span class="status" id="status">idle</span>
+    <input type="text" id="wsUrl" value="ws://localhost:8766" spellcheck="false" aria-label="websocket URL">
+    <button id="btnConnect">connect</button>
+    <button class="ghost" id="btnFile" title="Load a recording (.jsonl written with SIM_VIZ_RECORD=file.jsonl) and scrub through it offline">open rec…</button>
+    <input type="file" id="fileInput" accept=".jsonl,.json,.txt" hidden>
+    <button class="ghost" id="btnVideo" title="Record the two views side by side to a webm video; click again to stop and download">⏺ video</button>
+    <button class="ghost" id="btnStack" aria-pressed="false" title="What this sim is running: bridge, control, plant, pacing">ⓘ stack</button>
+    <button class="ghost" id="btnKill" style="color:#f87171;border-color:#7f1d1d" title="Ask the connected bridge to shut down and release the websocket port">⏻ kill sim</button>
+    <span class="readout" id="hud"></span>
+  </div>
+
+  <div class="bar" id="stackBox" style="display:none;padding:10px 16px">
+    <div>
+      <p class="eyebrow" style="margin-bottom:6px">stack — what this sim is running</p>
+      <ul id="stackList" style="margin:0;padding-left:18px;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--ink)"></ul>
+    </div>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <h2>3d view <span class="hint">drag: orbit · wheel: zoom · dblclick: follow on/off</span></h2>
+      <canvas id="c3d" width="960" height="640"></canvas>
+    </div>
+    <div class="panel">
+      <h2>side elevation <span class="hint">north – altitude</span></h2>
+      <canvas id="cSide" width="640" height="420"></canvas>
+      <h2 style="margin-top:4px">controls</h2>
+      <div class="bar" style="padding:8px 10px">
+        <button id="btnPlay">⏸</button>
+        <button class="ghost" id="btnLive" aria-pressed="true">LIVE</button>
+        <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="timeline">
+      </div>
+      <div class="bar" style="padding:8px 10px">
+        <span class="small" title="Replay speed. Picking one steps out of LIVE and replays the buffer; hit LIVE to follow the sim again.">replay speed</span>
+        <span class="spd" id="spd">
+          <button data-s="0.25">¼×</button><button data-s="0.5">½×</button>
+          <button data-s="1" aria-pressed="true">1×</button><button data-s="2">2×</button><button data-s="4">4×</button>
+        </span>
+        <button class="ghost" id="btnTrails" aria-pressed="true" title="Fading position trails per drone">trails</button>
+        <button class="ghost" id="btnGrid" aria-pressed="true" title="Ground grid">grid</button>
+        <button class="ghost" id="btnTarget" aria-pressed="true" title="Show the injected target marker, if any">target</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ---- palette for N drones (fixed first 8, HSL fallback beyond) -------------
+const FIXED = ["#22d3ee","#f59e0b","#34d399","#f472b6","#a78bfa","#facc15","#38bdf8","#fb7185"];
+function droneColor(i){ return i < FIXED.length ? FIXED[i] : `hsl(${(i*47)%360} 70% 60%)`; }
+
+// ---- state -----------------------------------------------------------------
+const S = {
+  meta:null, frames:[], live:true, playing:true, speed:1,
+  idx:0, playT:0, lastWall:0,
+  trails:true, grid:true, showTarget:true,
+  cam:{az:-0.7, el:0.62, scale:60, cx:0, cy:0, follow:false},
+  ws:null, rec:null, recChunks:[],
+};
+const TRAIL_MAX = 120;
+
+// ---- dom -------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const c3d = $("c3d"), g3 = c3d.getContext("2d");
+const cS = $("cSide"), gS = cS.getContext("2d");
+
+// ---- ingest ----------------------------------------------------------------
+function onMeta(m){
+  S.meta = m;
+  $("srcLabel").textContent = m.source ? `· ${m.source}` : "";
+  // legend
+  const leg = $("legend"); leg.innerHTML = "";
+  const n = m.n_drones || 0;
+  for(let i=0;i<n;i++){
+    const s = document.createElement("span"); s.className="lg";
+    s.innerHTML = `<span class="dot" style="background:${droneColor(i)}"></span>d${i+1}`;
+    leg.appendChild(s);
+  }
+  const t = document.createElement("span"); t.className="lg";
+  t.innerHTML = `<span class="dot" style="background:var(--tgt)"></span>target`;
+  leg.appendChild(t);
+  // stack list
+  const sl = $("stackList"); sl.innerHTML = "";
+  (m.stack||[]).forEach(line => { const li=document.createElement("li"); li.textContent=line; sl.appendChild(li); });
+}
+function onFrame(f){
+  S.frames.push(f);
+  if(S.frames.length > 20000) S.frames.splice(0, 5000);   // cap memory on long runs
+  $("scrub").max = S.frames.length - 1;
+  if(S.live){ S.idx = S.frames.length - 1; $("scrub").value = S.idx; }
+}
+function ingest(obj){
+  if(!obj || typeof obj!=="object") return;
+  if(obj.type==="meta") onMeta(obj);
+  else if(obj.type==="frame") onFrame(obj);
+}
+
+// ---- websocket -------------------------------------------------------------
+function connect(){
+  const url = $("wsUrl").value.trim();
+  try { S.ws = new WebSocket(url); } catch(e){ setStatus("err","bad url"); return; }
+  setStatus("", "connecting…");
+  S.ws.onopen = () => { setStatus("live","live"); S.live=true; $("btnLive").setAttribute("aria-pressed","true"); };
+  S.ws.onclose = () => setStatus("err","closed");
+  S.ws.onerror = () => setStatus("err","error");
+  S.ws.onmessage = ev => { try { ingest(JSON.parse(ev.data)); } catch(e){} };
+}
+function setStatus(cls,txt){ const s=$("status"); s.className="status"+(cls?" "+cls:""); s.textContent=txt; }
+
+// ---- file playback ---------------------------------------------------------
+$("btnFile").onclick = () => $("fileInput").click();
+$("fileInput").onchange = e => {
+  const file = e.target.files[0]; if(!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    S.frames = []; S.meta = null;
+    file.name;
+    r.result.split("\n").forEach(line => { line=line.trim(); if(!line) return; try{ ingest(JSON.parse(line)); }catch(_){} });
+    S.live=false; $("btnLive").setAttribute("aria-pressed","false");
+    S.idx=0; S.playT = S.frames.length? S.frames[0].t : 0; S.playing=true;
+    $("scrub").max = Math.max(0,S.frames.length-1); $("scrub").value=0;
+    setStatus("", `rec: ${file.name} (${S.frames.length} frames)`);
+  };
+  r.readAsText(file);
+};
+
+// ---- controls --------------------------------------------------------------
+$("btnConnect").onclick = connect;
+$("btnLive").onclick = () => { S.live=!S.live; $("btnLive").setAttribute("aria-pressed", S.live?"true":"false"); if(S.live && S.frames.length){ S.idx=S.frames.length-1; } };
+$("btnPlay").onclick = () => { S.playing=!S.playing; $("btnPlay").textContent = S.playing?"⏸":"▶"; };
+$("scrub").oninput = e => { S.live=false; $("btnLive").setAttribute("aria-pressed","false"); S.idx=+e.target.value; if(S.frames[S.idx]) S.playT=S.frames[S.idx].t; };
+$("spd").onclick = e => { const b=e.target.closest("button"); if(!b) return; S.speed=+b.dataset.s; [...$("spd").children].forEach(x=>x.setAttribute("aria-pressed", x===b?"true":"false")); S.live=false; $("btnLive").setAttribute("aria-pressed","false"); };
+function toggle(id,key){ $(id).onclick=()=>{ S[key]=!S[key]; $(id).setAttribute("aria-pressed",S[key]?"true":"false"); }; }
+toggle("btnTrails","trails"); toggle("btnGrid","grid"); toggle("btnTarget","showTarget");
+$("btnStack").onclick = () => { const b=$("stackBox"), on=b.style.display==="none"; b.style.display=on?"flex":"none"; $("btnStack").setAttribute("aria-pressed",on?"true":"false"); };
+$("btnKill").onclick = () => { if(S.ws && S.ws.readyState===1){ S.ws.send(JSON.stringify({type:"cmd",cmd:"shutdown"})); setStatus("err","kill sent"); } };
+
+// ---- camera interaction ----------------------------------------------------
+let drag=null;
+c3d.addEventListener("pointerdown", e => { drag={x:e.clientX,y:e.clientY}; c3d.setPointerCapture(e.pointerId); });
+c3d.addEventListener("pointermove", e => { if(!drag) return; S.cam.az -= (e.clientX-drag.x)*0.008; S.cam.el = Math.max(0.05, Math.min(1.5, S.cam.el + (e.clientY-drag.y)*0.006)); drag={x:e.clientX,y:e.clientY}; });
+c3d.addEventListener("pointerup", () => drag=null);
+c3d.addEventListener("wheel", e => { e.preventDefault(); S.cam.scale *= Math.exp(-e.deltaY*0.001); S.cam.scale=Math.max(6,Math.min(600,S.cam.scale)); }, {passive:false});
+c3d.addEventListener("dblclick", () => S.cam.follow=!S.cam.follow);
+
+// ---- projection: world (N, E, D) -> screen ---------------------------------
+// world axes for the camera: right = East, depth = North, up = altitude (=-D).
+function project(N,E,D, w,h, center){
+  const xw=E-center.E, yw=N-center.N, zw=(-D)-center.up;
+  const ca=Math.cos(S.cam.az), sa=Math.sin(S.cam.az);
+  const x1= ca*xw + sa*yw, y1= -sa*xw + ca*yw, z1=zw;
+  const ce=Math.cos(S.cam.el), se=Math.sin(S.cam.el);
+  const y2= ce*y1 - se*z1, z2= se*y1 + ce*z1;
+  return { x: w/2 + x1*S.cam.scale, y: h/2 - y2*S.cam.scale, depth: z2 };
+}
+
+// ---- quaternion (w,x,y,z) NED -> yaw (heading) -----------------------------
+function yawOf(q){ const [w,x,y,z]=q; return Math.atan2(2*(w*z+x*y), 1-2*(y*y+z*z)); }
+
+// ---- trails ----------------------------------------------------------------
+const trails = [];  // per-drone array of [N,E,D]
+function pushTrail(drones){
+  drones.forEach((d,i)=>{ (trails[i]=trails[i]||[]).push(d.p); if(trails[i].length>TRAIL_MAX) trails[i].shift(); });
+}
+
+// ---- draw 3d ---------------------------------------------------------------
+function sceneCenter(drones){
+  if(!drones.length) return {N:0,E:0,up:0};
+  let N=0,E=0,up=0; drones.forEach(d=>{N+=d.p[0];E+=d.p[1];up+=-d.p[2];});
+  return {N:N/drones.length, E:E/drones.length, up: S.cam.follow ? up/drones.length : 0};
+}
+function draw3d(fr){
+  const w=c3d.width, h=c3d.height;
+  g3.fillStyle="#0d1526"; g3.fillRect(0,0,w,h);
+  const drones = fr ? fr.drones : [];
+  const center = sceneCenter(drones);
+
+  if(S.grid){
+    const R=8, step=1;
+    g3.lineWidth=1;
+    for(let gx=-R; gx<=R; gx+=step){
+      g3.strokeStyle = gx===0 ? "#2c3d63" : "#182742";
+      let a=project(gx,-R,0,w,h,center), b=project(gx,R,0,w,h,center);
+      g3.beginPath(); g3.moveTo(a.x,a.y); g3.lineTo(b.x,b.y); g3.stroke();
+      a=project(-R,gx,0,w,h,center); b=project(R,gx,0,w,h,center);
+      g3.beginPath(); g3.moveTo(a.x,a.y); g3.lineTo(b.x,b.y); g3.stroke();
+    }
+  }
+
+  // trails
+  if(S.trails){
+    drones.forEach((d,i)=>{
+      const tr=trails[i]; if(!tr||tr.length<2) return;
+      const col=droneColor(i);
+      for(let k=1;k<tr.length;k++){
+        const a=project(...tr[k-1],w,h,center), b=project(...tr[k],w,h,center);
+        g3.strokeStyle=col; g3.globalAlpha=0.06+0.5*(k/tr.length); g3.lineWidth=1.5;
+        g3.beginPath(); g3.moveTo(a.x,a.y); g3.lineTo(b.x,b.y); g3.stroke();
+      }
+    });
+    g3.globalAlpha=1;
+  }
+
+  // drop lines to the ground + drones (painter order by depth)
+  const order = drones.map((d,i)=>({d,i,pz:project(...d.p,w,h,center).depth})).sort((a,b)=>a.pz-b.pz);
+  order.forEach(({d,i})=>{
+    const p=project(...d.p,w,h,center);
+    const g0=project(d.p[0],d.p[1],0,w,h,center);
+    g3.strokeStyle="#26385c"; g3.lineWidth=1; g3.setLineDash([2,3]);
+    g3.beginPath(); g3.moveTo(g0.x,g0.y); g3.lineTo(p.x,p.y); g3.stroke(); g3.setLineDash([]);
+    drawQuad(g3,p.x,p.y,droneColor(i), yawOf(d.q), i);
+  });
+
+  // target
+  if(S.showTarget && fr && fr.target){
+    const p=project(...fr.target,w,h,center);
+    g3.fillStyle="#ef4444"; g3.beginPath(); g3.arc(p.x,p.y,6,0,7); g3.fill();
+    g3.strokeStyle="#ef4444"; g3.globalAlpha=0.5; g3.beginPath(); g3.arc(p.x,p.y,11,0,7); g3.stroke(); g3.globalAlpha=1;
+  }
+}
+function drawQuad(g,x,y,col,yaw,i){
+  const arm=11, ca=Math.cos(yaw), sa=Math.sin(yaw);
+  g.strokeStyle=col; g.lineWidth=2.2;
+  for(const s of [[1,1],[-1,1]]){
+    const dx=(s[0]*ca - s[1]*sa)*arm, dy=(s[0]*sa + s[1]*ca)*arm;
+    g.beginPath(); g.moveTo(x-dx,y-dy); g.lineTo(x+dx,y+dy); g.stroke();
+    for(const e of [[x-dx,y-dy],[x+dx,y+dy]]){ g.fillStyle=col; g.beginPath(); g.arc(e[0],e[1],2.6,0,7); g.fill(); }
+  }
+  g.fillStyle=col; g.beginPath(); g.arc(x,y,3.2,0,7); g.fill();
+  g.fillStyle="#04121a"; g.font="9px "+getComputedStyle(document.body).getPropertyValue("--mono");
+  g.textAlign="center"; g.textBaseline="middle"; g.fillText(String(i+1),x,y+0.5);
+}
+
+// ---- draw side elevation (north vs altitude) -------------------------------
+function drawSide(fr){
+  const w=cS.width, h=cS.height, pad=34;
+  gS.fillStyle="#0d1526"; gS.fillRect(0,0,w,h);
+  const drones = fr?fr.drones:[];
+  // fit to data ranges seen in trails + this frame
+  let nMin=-4,nMax=4,aMin=0,aMax=4;
+  const all=[]; trails.forEach(tr=>tr&&tr.forEach(p=>all.push(p))); drones.forEach(d=>all.push(d.p));
+  if(all.length){ nMin=Math.min(...all.map(p=>p[0]))-1; nMax=Math.max(...all.map(p=>p[0]))+1;
+    aMax=Math.max(2, Math.max(...all.map(p=>-p[2]))+0.5); }
+  const X = N => pad + (N-nMin)/(nMax-nMin||1)*(w-2*pad);
+  const Y = a => (h-pad) - (a-aMin)/(aMax-aMin||1)*(h-2*pad);
+  // axes
+  gS.strokeStyle="#20304f"; gS.lineWidth=1;
+  gS.beginPath(); gS.moveTo(pad,h-pad); gS.lineTo(w-pad,h-pad); gS.moveTo(pad,pad); gS.lineTo(pad,h-pad); gS.stroke();
+  gS.fillStyle="#6b7a99"; gS.font="10px "+getComputedStyle(document.body).getPropertyValue("--mono");
+  gS.textAlign="center"; gS.fillText("north [m]", w/2, h-8);
+  gS.save(); gS.translate(11,h/2); gS.rotate(-Math.PI/2); gS.fillText("altitude [m]",0,0); gS.restore();
+  // ground line
+  gS.strokeStyle="#2c3d63"; gS.beginPath(); gS.moveTo(pad,Y(0)); gS.lineTo(w-pad,Y(0)); gS.stroke();
+  // trails + drones
+  if(S.trails) drones.forEach((d,i)=>{ const tr=trails[i]; if(!tr) return; gS.strokeStyle=droneColor(i); gS.globalAlpha=0.4; gS.lineWidth=1;
+    gS.beginPath(); tr.forEach((p,k)=>{ const x=X(p[0]),y=Y(-p[2]); k?gS.lineTo(x,y):gS.moveTo(x,y); }); gS.stroke(); gS.globalAlpha=1; });
+  drones.forEach((d,i)=>{ gS.fillStyle=droneColor(i); gS.beginPath(); gS.arc(X(d.p[0]),Y(-d.p[2]),4,0,7); gS.fill(); });
+  if(S.showTarget && fr && fr.target){ gS.fillStyle="#ef4444"; gS.beginPath(); gS.arc(X(fr.target[0]),Y(-fr.target[2]),4,0,7); gS.fill(); }
+}
+
+// ---- HUD -------------------------------------------------------------------
+function hud(fr){
+  if(!fr){ $("hud").innerHTML=""; return; }
+  const alts = fr.drones.map(d=>(-d.p[2]).toFixed(2)).join(" ");
+  let s = `<span><b>t</b> ${fr.t.toFixed(2)}s</span><span><b>rtf</b> ${(fr.rtf||0).toFixed(2)}×</span>`;
+  if(fr.phase) s += `<span><b>phase</b> ${fr.phase}</span>`;
+  s += `<span><b>alt</b> ${alts} m</span>`;
+  $("hud").innerHTML = s;
+}
+
+// ---- main loop -------------------------------------------------------------
+function pickFrame(now){
+  if(!S.frames.length) return null;
+  if(S.live){ S.idx=S.frames.length-1; return S.frames[S.idx]; }
+  if(S.playing){
+    const dt=(now-S.lastWall)/1000; S.playT += dt*S.speed;
+    while(S.idx<S.frames.length-1 && S.frames[S.idx+1].t<=S.playT) S.idx++;
+    if(S.idx>=S.frames.length-1){ // loop the recording
+      if(S.frames.length) { S.playT=S.frames[0].t; S.idx=0; }
+    }
+    $("scrub").value=S.idx;
+  }
+  return S.frames[S.idx];
+}
+function loop(now){
+  const fr = pickFrame(now);
+  S.lastWall = now;
+  if(fr){ pushTrail(fr.drones); }   // trail follows whatever frame is shown
+  draw3d(fr); drawSide(fr); hud(fr);
+  requestAnimationFrame(loop);
+}
+// trails should not double-append when paused on the same frame
+let _lastTrailIdx=-1, _lastTrailN=-1;
+const _origPush = pushTrail;
+pushTrail = function(drones){ if(S.idx===_lastTrailIdx && S.frames.length===_lastTrailN) return; _lastTrailIdx=S.idx; _lastTrailN=S.frames.length; _origPush(drones); };
+
+// ---- video record (both panels side by side) -------------------------------
+$("btnVideo").onclick = () => {
+  if(S.rec){ S.rec.stop(); return; }
+  const out=document.createElement("canvas"); out.width=c3d.width+cS.width+20; out.height=Math.max(c3d.height,cS.height);
+  const og=out.getContext("2d");
+  const composit=()=>{ og.fillStyle="#0a0f1e"; og.fillRect(0,0,out.width,out.height); og.drawImage(c3d,0,0); og.drawImage(cS,c3d.width+20,0); if(S.rec) requestAnimationFrame(composit); };
+  const stream=out.captureStream(30);
+  try { S.rec=new MediaRecorder(stream,{mimeType:"video/webm"}); } catch(e){ setStatus("err","no MediaRecorder"); return; }
+  S.recChunks=[]; S.rec.ondataavailable=e=>{ if(e.data.size) S.recChunks.push(e.data); };
+  S.rec.onstop=()=>{ const blob=new Blob(S.recChunks,{type:"video/webm"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="multi_uav_sim.webm"; a.click(); S.rec=null; $("btnVideo").setAttribute("aria-pressed","false"); $("btnVideo").textContent="⏺ video"; };
+  S.rec.start(); composit(); $("btnVideo").setAttribute("aria-pressed","true"); $("btnVideo").textContent="⏹ stop";
+};
+
+// ---- go --------------------------------------------------------------------
+requestAnimationFrame(loop);
+// autoconnect if a ws url is in the query (?ws=...)
+const q=new URLSearchParams(location.search); if(q.get("ws")){ $("wsUrl").value=q.get("ws"); connect(); }
+</script>
+</body>
+</html>
