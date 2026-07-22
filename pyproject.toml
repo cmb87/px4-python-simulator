@@ -19,6 +19,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+rl = [
+  "gymnasium>=0.29"
+]
 viz = [
   "matplotlib>=3.7"
 ]
@@ -32,7 +35,7 @@ py-modules = ["main", "dummy_ground_truth_ws_publisher", "sim_utils"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["vehicle*", "visualizer*", "guidance*", "dynamics*", "sensor*", "networking*"]
+include = ["vehicles*", "visualizer*", "guidance*", "dynamics*", "sensors*", "networking*", "rl*", "perception*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.csv", "*.dat"]

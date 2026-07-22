@@ -55,10 +55,47 @@ class World(SimComponentBase):
         self._rail_force_logged = False
         self._configure_rail_launch()
 
-    def _configure_rail_launch(self):
+    def reset(self, y0=None, u0=None, wind0=None, t_us=0, launch_mode="default"):
+        launch_mode = str(launch_mode).strip().lower()
+        if launch_mode not in {"default", "catapult", "airborne", "free"}:
+            raise ValueError("launch_mode must be one of default|catapult|airborne|free")
+
+        if y0 is None:
+            self.y = np.asarray(self._vehicle_def.make_initial_state(self.model_options), dtype=float).copy()
+        else:
+            self.y = np.asarray(y0, dtype=float).copy()
+        self.u = np.zeros(4) if u0 is None else np.asarray(u0, dtype=float).copy()
+        self.wind = np.zeros(6) if wind0 is None else np.asarray(wind0, dtype=float).copy()
+
+        self.dynamics = Dynamics6DOF(z_ground=self.dynamics.z_ground)
+        self.force_models = list(self._vehicle_def.make_force_models(self.P))
+        self.sensor_suite = SensorSuite()
+        self.last_output = None
+        self._last_t_us = int(t_us)
+        self.dynamics._last_t_us = int(t_us)
+        self._rail_exit_logged = False
+        self._rail_force_logged = False
+
+        if launch_mode == "catapult":
+            self.rail_launch_enabled = True
+            self._configure_rail_launch(place_on_rail=True)
+        elif launch_mode == "airborne":
+            self.rail_launch_enabled = bool(
+                self.model_options.get("rail_launch_enabled", getattr(self.P, "rail_launch_enabled", False))
+            )
+            self._configure_rail_launch(place_on_rail=False)
+        elif launch_mode == "free":
+            self.rail_launch_enabled = False
+            self._configure_rail_launch(place_on_rail=False)
+        else:
+            self.rail_launch_enabled = bool(
+                self.model_options.get("rail_launch_enabled", getattr(self.P, "rail_launch_enabled", False))
+            )
+            self._configure_rail_launch(place_on_rail=True)
+
+    def _configure_rail_launch(self, place_on_rail=True):
         if not self.rail_launch_enabled:
-            if not hasattr(self.P, "left_rail"):
-                self.P.left_rail = True
+            self.P.left_rail = True
             return
 
         default_dir = np.array([np.cos(np.deg2rad(45.0)), 0.0, -np.sin(np.deg2rad(45.0))], dtype=float)
@@ -75,7 +112,7 @@ class World(SimComponentBase):
         )
         self.P.rail_length = float(self.model_options.get("rail_length_m", getattr(self.P, "rail_length", 2.0)))
         self.P.rail_pull_max = float(self.model_options.get("rail_pull_max", getattr(self.P, "rail_pull_max", 1.0)))
-        self.P.left_rail = False
+        self.P.left_rail = not bool(place_on_rail)
 
         initial_pull_n = self.P.rail_pull_max * float(self.P.gravity) * float(self.P.rail_length)
         logger.info(
@@ -85,10 +122,11 @@ class World(SimComponentBase):
             float(initial_pull_n),
         )
 
-        self.y[0:3] = self.P.rail_start_ned
-        rail_quat = rail_alignment_quaternion_wxyz(self.P)
-        self.y[3:7] = rail_quat
-        self.y[10:13] = 0.0
+        if place_on_rail:
+            self.y[0:3] = self.P.rail_start_ned
+            rail_quat = rail_alignment_quaternion_wxyz(self.P)
+            self.y[3:7] = rail_quat
+            self.y[10:13] = 0.0
 
     def set_state(self, y):
         self.y = np.asarray(y, dtype=float).copy()

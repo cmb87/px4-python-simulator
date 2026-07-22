@@ -27,6 +27,28 @@ def test_unknown_vehicle_model_raises_value_error():
         pass
 
 
+def test_x8_world_reset_launch_modes():
+    world = World(vehicle_model="x8")
+
+    world.reset(launch_mode="catapult")
+    assert world.rail_launch_enabled
+    assert not world.P.left_rail
+    assert np.allclose(world.y[0:3], world.P.rail_start_ned)
+
+    y0 = np.zeros(13)
+    y0[2] = -50.0
+    y0[3] = 1.0
+    y0[7] = 18.0
+    world.reset(y0=y0, launch_mode="airborne")
+    assert world.rail_launch_enabled
+    assert world.P.left_rail
+    assert np.allclose(world.y, y0)
+
+    world.reset(launch_mode="free")
+    assert not world.rail_launch_enabled
+    assert world.P.left_rail
+
+
 def test_ts06_forces_and_moments():
     defn = get_vehicle_definition("ts06")
     P = defn.make_parameters()
@@ -152,5 +174,4 @@ def test_ts06_weathercock_stability():
     
     # Aerodynamic yaw moment (index 2 of torque) should be negative to turn nose left (into wind)
     assert torque_neg_beta[2] < 0.0
-
 

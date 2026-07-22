@@ -155,6 +155,76 @@ This aligns the simulated accelerometer behavior with the Java implementation an
 
 To better match jMAVSim-like behavior, IMU, magnetometer, GPS, and barometer noise paths are enabled by default in `SensorSuite`.
 
+## Gymnasium / RL Usage
+
+The simulator can also run without PX4 through a Gymnasium-compatible environment.
+
+- Install with RL dependencies: `pip install -e .[rl]`
+- Import: `from rl import Px4SimEnv`
+- The environment wraps `dynamics.world.World` directly, so no MAVLink connection or PX4 process is required.
+- Observations are the 13-element ground-truth state by default: position NED, quaternion `wxyz`, body velocity, and body rates.
+- Actions are 4 normalized values in `[-1, 1]`; for `iris` they are mapped to motor commands in `[0, 1]`, for fixed-wing models action 0 is mapped to throttle and the remaining channels are passed through as surface commands.
+
+Example airborne reset:
+
+```python
+from rl import Px4SimEnv
+
+env = Px4SimEnv(vehicle_model="iris", initial_state="airborne")
+obs, info = env.reset(options={"altitude_m": 30.0, "speed_mps": 0.0})
+obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+env.close()
+```
+
+Launch handling is explicit through `launch_mode`:
+
+- `default`: use the vehicle's configured launch behavior.
+- `catapult`: force a rail/catapult start; the model begins on the rail and switches to free 6DOF after rail exit.
+- `airborne`: preserve the airborne initial state and skip rail dynamics by setting `P.left_rail=True`.
+- `free`: disable launch mechanics entirely and start directly in free 6DOF.
+
+Optional websocket ground-truth output is available for debugging and visualization:
+
+```python
+env = Px4SimEnv(
+    vehicle_model="iris",
+    initial_state="airborne",
+    enable_websocket=True,
+    websocket_port=8765,
+    websocket_system_id=1,
+)
+```
+
+For parallel RL training, keep websocket disabled or assign a unique port to each debug instance.
+
+X8 websocket debug example:
+
+- Run: `PYTHONPATH=src python examples/x8_rl_websocket.py`
+- Connect the visualizer to `ws://127.0.0.1:8765`
+- The example starts the X8 already airborne with `launch_mode="airborne"`, so the catapult rail switch is skipped.
+
+Two independent X8 vehicles with two websocket outputs:
+
+- Run: `PYTHONPATH=src python examples/two_x8_two_websockets.py`
+- Connect one visualizer to `ws://127.0.0.1:8765` for `system_id=1`
+- Connect another visualizer to `ws://127.0.0.1:8766` for `system_id=2`
+- This uses two independent `Px4SimEnv` instances, not coupled multi-vehicle physics.
+- The example also prints a simple ground-truth camera measurement in both directions: center pixel, depth, and visibility.
+
+Simple camera projection utility:
+
+```python
+from perception import PinholeCamera
+
+camera = PinholeCamera(width=640, height=480, fx=400.0, fy=400.0)
+measurement = camera.project_world_point(
+    point_ned=neighbor_state[0:3],
+    ego_position_ned=ego_state[0:3],
+    ego_quaternion_wxyz=ego_state[3:7],
+)
+print(measurement.visible, measurement.pixel, measurement.depth_m)
+```
+
 ## Technical Documentation (LaTeX)
 
 A full architecture document is available at `docs/architecture.tex`.
@@ -204,4 +274,3 @@ Model selection example:
 # Interactive Websocket visualization
 
 Go to https://cmb87.github.io/ and connect the simulator via websocket
-
