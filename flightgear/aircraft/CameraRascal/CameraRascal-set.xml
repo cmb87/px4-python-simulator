@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<PropertyList>
-  <sim>
-    <description>Camera-only Rascal variant for clean world view output.</description>
-    <author>Local custom setup</author>
-  </sim>
-
-  <include>Aircraft/Rascal110-JSBSim/Rascal110-JSBSim-set.xml</include>
-</PropertyList>
