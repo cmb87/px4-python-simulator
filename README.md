@@ -1,164 +1,196 @@
 # PX4 Python SITL
 
-Python lockstep SITL bridge that runs the local 6DOF vehicle model and publishes MAVLink HIL sensor streams to PX4.
+Python lockstep SITL bridge for PX4 with a local 6DOF vehicle model, synthesized sensors, optional ground-truth output, and a Gymnasium-compatible RL interface.
 
-## Python Package
+## What This Repo Does
 
-This repository is installable as a Python package.
+- Runs a local vehicle model in Python through `src/dynamics/world.py`
+- Publishes MAVLink HIL sensor data to PX4 through `src/main.py`
+- Supports multiple vehicle definitions: `iris`, `x8`, `ts06`
+- Can run without PX4 through `rl.Px4SimEnv`
+- Includes a simple pinhole camera projection utility in `src/perception/`
+- Includes support scripts, examples, and technical docs under `support/`
 
-- Editable install: `pip install -e .`
-- Standard install: `pip install .`
-- Console entry point after install: `px4-python-sitl`
+## Repository Layout
 
-The package metadata is defined in `pyproject.toml`.
+- `src/` core simulator, vehicle models, RL environment, networking, and perception utilities
+- `px4/` PX4 airframe integration notes and custom airframe files
+- `docker/` container build and compose setup
+- `support/examples/` runnable examples
+- `support/tools/` helper scripts and the multi-UAV viewer
+- `support/docs/src/` authored technical documentation
+- `support/docs/build/` generated LaTeX outputs
+- `support/docs/references/` reference PDFs kept in the repo
 
-If editable install fails in a ROS2 container with a `build_editable` error, upgrade build tooling first and then install:
+## Install
+
+Standard install:
+
+- `pip install .`
+
+If you want the RL environment too:
+
+- `pip install .[rl]`
+
+If editable install fails in a container with a `build_editable` error, upgrade build tools first and retry:
 
 - `python3 -m pip install --upgrade pip setuptools wheel build`
 - `python3 -m pip install -e . || python3 -m pip install .`
 
-## Architecture
+For development without package installation, most examples and tests also work with `PYTHONPATH=src`.
 
-```text
-                      +-----------------------+
-                      |       PX4 SITL        |
-                      |  EKF / controllers    |
-                      +-----------+-----------+
-                                  |
-                     HIL_ACTUATOR_CONTROLS
-                                  |
-                                  v
-                    +-----------------------------+
-                    |           main.py           |
-                    |  lockstep + MAVLink bridge  |
-                    +--------------+--------------+
-                                   |
-                          controls_to_u()
-                                   |
-                                   v
-                    +-----------------------------+
-                    |        vehicle.World        |
-                    |-----------------------------|
-                    |  selected vehicle model     |
-                    |  Dynamics6DOF (state integ) |
-                    |  SensorSuite (IMU/Mag/Baro/ |
-                    |              GPS synthesis)  |
-                    +---------------+-------------+
-                                    |
-               +--------------------+--------------------+
-               |                    |                    |
-               v                    v                    v
-       HIL_SENSOR (250 Hz)   HIL_GPS (5 Hz)    HIL_STATE_QUATERNION
-               |                    |               (on PX4 request)
-               +--------------------+--------------------+
-                                    |
-                                    v
-                                 PX4 EKF
+## Core Concepts
 
+- World frame: NED (`x=north`, `y=east`, `z=down`)
+- Body frame: FRD (`x=forward`, `y=right`, `z=down`)
+- Main simulator loop: `src/main.py`
+- Vehicle model selection: `src/vehicles/vehicle_catalog.py`
+- Model-agnostic plant wrapper: `src/dynamics/world.py`
+- Ground-truth websocket publisher: `src/networking/websocket_publisher.py`
 
-Ground-truth side channel:
+The simulator runs the plant locally, synthesizes IMU, magnetometer, barometer, and GPS outputs, and streams them to PX4 as MAVLink HIL messages.
 
-vehicle.World -> main.py -> GroundTruth WS -> src/test/ground_truth_ws_visualizer.py
+## Use With PX4
+
+### 1. Prepare PX4
+
+For stock `iris`, PX4 SITL can already run without custom airframes.
+
+For custom models such as `x8` and `ts06`, this repo ships PX4 airframe files under `px4/airframes/`.
+
+At the moment those files are:
+
+- `px4/airframes/10021_none_x8`
+- `px4/airframes/10022_none_ts06`
+- `px4/airframes/ts06_params.params`
+
+To make PX4 aware of these vehicles:
+
+1. copy the airframe files from `px4/airframes/` into your PX4 checkout
+2. register them in PX4 CMake files
+3. build PX4 SITL targets such as `none_x8` or `none_ts06`
+
+In practice:
+
+1. Copy the airframe files:
+
+```bash
+cp px4/airframes/* <PX4 repo>/ROMFS/px4fmu_common/init.d-posix/airframes/
 ```
 
-## Vehicle Models
+2. Register the airframes in:
 
-Vehicle-specific setup lives in `src/vehicles/<name>/`, and model selection lives in `src/vehicles/vehicle_catalog.py`.
+- `<PX4 repo>/ROMFS/px4fmu_common/init.d-posix/airframes/CMakeLists.txt`
 
-Default models:
+Add entries such as:
 
-- `x8`
-- `iris`
+```text
+10021_none_x8
+10022_none_ts06
+```
 
-`src/dynamics/world.py` is model-agnostic: it resolves parameters, force models, and default initial state via the vehicle catalog.
+3. Register SITL launch targets in:
 
-### Add a New Vehicle
+- `<PX4 repo>/src/modules/simulation/simulator_mavlink/CMakeLists.txt`
 
-1. Add a vehicle folder under `src/vehicles/` (for example `src/vehicles/my_uav/`) with:
-   - `parameters.py`
-   - `forces.py`
-   - `initial_state.py`
-   - `definition.py` exposing `make_parameters()`, `make_force_models(parameters)`, and `make_initial_state(config)`
-   - optionally reuse shared force blocks from `src/vehicles/common_forces/`
-2. Register it explicitly in `src/vehicles/vehicle_catalog.py` by adding one entry to `VEHICLES`.
-3. Run tests (`pytest src/test/test_vehicle_catalog.py`) to verify catalog wiring and one-step world execution.
+This repo's `px4/README.md` contains ready-to-copy `add_custom_target(...)` blocks for `none_x8` and `none_ts06`.
 
-### Optional Rail Launch (All Vehicles)
+4. Rebuild PX4 SITL.
 
-Rail launch can be enabled for any vehicle model. While on rail, the simulator constrains motion to rail translation and keeps attitude aligned to the rail. After rail distance reaches rail length, dynamics automatically switch to free 6DOF.
+If you are adding a completely new vehicle beyond `x8` and `ts06`, repeat the same pattern:
 
-Per-vehicle rail parameters live in each vehicle's `parameters.py`:
+1. create a new PX4 airframe file under `px4/airframes/`
+2. assign it a new autostart ID
+3. add that airframe to PX4's airframe CMake list
+4. add a matching `none_<name>` SITL target in PX4's simulator MAVLink CMake file
+5. add the matching simulator-side vehicle definition under `src/vehicles/<name>/`
+6. register the simulator vehicle in `src/vehicles/vehicle_catalog.py`
 
-- `rail_launch_enabled` (default `False`)
-- `rail_dir_ned` (default `[0.7071, 0.0, -0.7071]`)
-- `rail_start_ned` (default `[0.0, 0.0, 0.0]`)
-- `rail_length` (default `2.0`)
-- `rail_pull_max` (default `1.0`)
+For the full PX4-side instructions, see `px4/README.md`.
 
-Runtime launch delay after arm is controlled by env var:
+### 2. Start the Python simulator
 
-- `SIM_CATAPULT_LAUNCH_COUNTDOWN_S` (default `3.0`)
-- Applies only when `rail_launch_enabled=True`.
+From this repo root:
 
-### How Models Integrate Into Architecture
+```bash
+SIM_VEHICLE_MODEL=iris SIM_MAVLINK_BIND_PORT=4560 python src/main.py
+```
 
-At runtime, model integration happens in this order:
+Useful environment variables:
 
-1. `src/main.py` reads `SIM_VEHICLE_MODEL` and creates `World(vehicle_model=...)`.
-2. `src/dynamics/world.py` resolves model-specific pieces from the catalog:
-   - parameters via the model spec
-   - force model list via the model spec
-   - default initial state via the model spec
-3. For each simulation step, `World.update(...)`:
-   - evaluates and sums all force-model outputs into `tau`
-   - runs `Dynamics6DOF` with `tau` and `P`
-   - runs `SensorSuite` from updated state and state derivative
-4. `src/main.py` publishes sensor outputs to PX4 via MAVLink HIL messages.
+- `SIM_VEHICLE_MODEL=x8|iris|ts06`
+- `SIM_MAVLINK_BIND_HOST` default `0.0.0.0`
+- `SIM_MAVLINK_BIND_PORT` default `4560`
+- `SIM_GPS_LAT` / `SIM_GPS_LON` / `SIM_GPS_ALT` for GPS origin
+- Legacy GPS names `SIM_GPS_ORIGIN_LAT` / `SIM_GPS_ORIGIN_LON` / `SIM_GPS_ORIGIN_ALT` are still accepted
 
-This keeps vehicle specifics inside `src/vehicles/<name>/*`, while `src/dynamics/world.py` stays vehicle-agnostic.
+### 3. Start PX4 SITL
 
-### Select Model
+Example for the custom tailsitter airframe:
 
-Use `SIM_VEHICLE_MODEL`:
+```bash
+cd ~/PX4-Autopilot
+make px4_sitl none_ts06
+```
 
-- `SIM_VEHICLE_MODEL=x8` (default)
-- `SIM_VEHICLE_MODEL=iris`
-- `SIM_VEHICLE_MODEL=ts06`
-- `SIM_GPS_LAT` / `SIM_GPS_LON` / `SIM_GPS_ALT` set GPS origin for all models.
-  Legacy names `SIM_GPS_ORIGIN_LAT` / `SIM_GPS_ORIGIN_LON` / `SIM_GPS_ORIGIN_ALT` are still accepted.
-  Defaults: `47.397742`, `8.545594`, `470.0`.
-- MAVLink (`HIL_STATE_QUATERNION`) and ground-truth websocket always publish raw simulation attitude.
-- Ground-truth websocket payload includes `aero.alpha_deg` and `aero.beta_deg` (set to `null` when airspeed is too low).
+PX4 connects to the simulator through MAVLink HIL and uses the simulated sensor stream for EKF and control.
 
-## Coordinate Frames
+### 4. Optional ground-truth output
 
-- Navigation frame is NED (`x=north`, `y=east`, `z=down`).
-- Body frame is FRD (`x=forward`, `y=right`, `z=down`).
-- The ground-truth visualizer displays NED directly (`Down` axis).
+Ground-truth output can be exposed independently of the noisy GPS sensor stream.
 
-## Important Implementation Note
+Modes:
 
-The IMU path in `vehicle/sensors/sensors.py` reconstructs accelerometer input from body-velocity derivative plus transport term:
+- `SIM_GT_OUTPUT_MODE=websocket` default
+- `SIM_GT_OUTPUT_MODE=flightgear_udp`
+- `SIM_GT_OUTPUT_MODE=off`
 
-`accel_for_imu = ydot_body_vel + omega x vel_body`
+Websocket options:
 
-This aligns the simulated accelerometer behavior with the Java implementation and keeps EKF turn behavior consistent.
+- `SIM_GT_OUTPUT_RATE_HZ` default `30.0`
+- `SIM_GT_WS_HOST` default `0.0.0.0`
+- `SIM_GT_WS_PORT` default `8765`
 
-## Sensor Noise Defaults
+FlightGear UDP options:
 
-To better match jMAVSim-like behavior, IMU, magnetometer, GPS, and barometer noise paths are enabled by default in `SensorSuite`.
+- `SIM_FG_UDP_HOST` default `127.0.0.1`
+- `SIM_FG_UDP_PORT` default `5503`
 
-## Gymnasium / RL Usage
+Example:
 
-The simulator can also run without PX4 through a Gymnasium-compatible environment.
+```bash
+SIM_VEHICLE_MODEL=ts06 SIM_GT_OUTPUT_MODE=websocket python src/main.py
+```
 
-- Install with RL dependencies: `pip install -e .[rl]`
-- Import: `from rl import Px4SimEnv`
-- The environment wraps `dynamics.world.World` directly, so no MAVLink connection or PX4 process is required.
-- Observations are the 13-element ground-truth state by default: position NED, quaternion `wxyz`, body velocity, and body rates.
-- Actions are 4 normalized values in `[-1, 1]`; for `iris` they are mapped to motor commands in `[0, 1]`, for fixed-wing models action 0 is mapped to throttle and the remaining channels are passed through as surface commands.
+### 5. Visualize ground truth
 
-Example airborne reset:
+Options:
+
+1. Open `https://cmb87.github.io/` and connect to the websocket.
+2. Use the local debug helper:
+
+```bash
+python src/test/ground_truth_ws_visualizer.py --host 127.0.0.1 --port 8765
+```
+
+## RL Usage
+
+The simulator can run without PX4 through `rl.Px4SimEnv`.
+
+Install RL dependencies:
+
+- `pip install .[rl]`
+
+Key behavior:
+
+- No PX4 process is required
+- The environment wraps `World` directly
+- Observation is the 13-element simulator state by default
+- Action space is 4D in `[-1, 1]`
+- For `iris`, actions are remapped to motor commands in `[0, 1]`
+- For fixed-wing models, action `0` is throttle and the remaining channels pass through as surface commands
+
+Example:
 
 ```python
 from rl import Px4SimEnv
@@ -169,18 +201,20 @@ obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
 env.close()
 ```
 
-Launch handling is explicit through `launch_mode`:
+Launch behavior is controlled through `launch_mode`:
 
-- `default`: use the vehicle's configured launch behavior.
-- `catapult`: force a rail/catapult start; the model begins on the rail and switches to free 6DOF after rail exit.
-- `airborne`: preserve the airborne initial state and skip rail dynamics by setting `P.left_rail=True`.
-- `free`: disable launch mechanics entirely and start directly in free 6DOF.
+- `default` use the vehicle's configured launch behavior
+- `catapult` force a rail launch
+- `airborne` start in the air and skip rail dynamics
+- `free` disable launch mechanics entirely
 
-Optional websocket ground-truth output is available for debugging and visualization:
+You can also enable websocket ground-truth output from RL runs for debugging:
 
 ```python
+from rl import Px4SimEnv
+
 env = Px4SimEnv(
-    vehicle_model="iris",
+    vehicle_model="x8",
     initial_state="airborne",
     enable_websocket=True,
     websocket_port=8765,
@@ -188,23 +222,30 @@ env = Px4SimEnv(
 )
 ```
 
-For parallel RL training, keep websocket disabled or assign a unique port to each debug instance.
+Examples:
 
-X8 websocket debug example:
+- `PYTHONPATH=src python support/examples/x8_rl_websocket.py`
+- `PYTHONPATH=src python support/examples/two_x8_two_websockets.py`
 
-- Run: `PYTHONPATH=src python support/examples/x8_rl_websocket.py`
-- Connect the visualizer to `ws://127.0.0.1:8765`
-- The example starts the X8 already airborne with `launch_mode="airborne"`, so the catapult rail switch is skipped.
+## Camera And Perception
 
-Two independent X8 vehicles with two websocket outputs:
+This repo includes a geometry utility for camera projection in `src/perception/camera.py`.
 
-- Run: `PYTHONPATH=src python support/examples/two_x8_two_websockets.py`
-- Connect one visualizer to `ws://127.0.0.1:8765` for `system_id=1`
-- Connect another visualizer to `ws://127.0.0.1:8766` for `system_id=2`
-- This uses two independent `Px4SimEnv` instances, not coupled multi-vehicle physics.
-- The example also prints a simple ground-truth camera measurement in both directions: center pixel, depth, and visibility.
+What it gives you:
 
-Simple camera projection utility:
+- a pinhole camera model through `perception.PinholeCamera`
+- projection from NED world points into an ego-mounted camera
+- visibility, pixel coordinates, and depth for each target point
+
+What it does not do yet:
+
+- no image renderer
+- no rasterized scene generation
+- no built-in camera sensor in the PX4 HIL loop
+
+Use it when you already have world points or another vehicle state and want synthetic camera measurements.
+
+Example:
 
 ```python
 from perception import PinholeCamera
@@ -218,83 +259,136 @@ measurement = camera.project_world_point(
 print(measurement.visible, measurement.pixel, measurement.depth_m)
 ```
 
-## Technical Documentation (LaTeX)
+### How to add a camera to your workflow
 
-A full architecture document is available at `support/docs/src/architecture.tex`.
+The usual pattern is:
 
-- Build PDF: `make -C support/docs/src`
-- Output: `support/docs/build/architecture.pdf`
+1. run a `World` or `Px4SimEnv` step
+2. read the ego state from `y[0:3]` and `y[3:7]`
+3. define a target world point or another vehicle position
+4. call `camera.project_world_point(...)`
+5. feed the resulting synthetic measurement into your controller, estimator, or RL observation pipeline
 
-The document covers:
+If you want a true camera sensor path inside the simulator, the clean place to add it is alongside the other synthetic sensors in `src/sensors/`, then expose it either through the RL info dict or a side-channel publisher.
 
-- 6DOF dynamics kernel
-- vehicle models (`iris`, `x8`, `ts06`)
-- sensor and force models
-- MAVLink HIL and external interfaces (WebSocket/FlightGear ground truth)
+## Vehicle Models
 
-## Run
+Registered models live in `src/vehicles/vehicle_catalog.py`.
 
-- Optional ground-truth view: `python src/test/ground_truth_ws_visualizer.py --host 127.0.0.1 --port 8765`
+Current models:
 
-### Start
+- `iris`
+- `x8`
+- `ts06`
 
-Single-instance simulator run:
+Vehicle-specific code lives under `src/vehicles/<name>/`.
 
-- `SIM_VEHICLE_MODEL=iris SIM_MAVLINK_BIND_PORT=4560 python src/main.py`
+`src/dynamics/world.py` stays model-agnostic and resolves:
 
-Ground-truth output options:
+- parameter definitions
+- force model lists
+- default initial state
 
-- `SIM_GT_OUTPUT_MODE=websocket|flightgear_udp|off` (default `websocket`)
-- `SIM_GT_OUTPUT_RATE_HZ` (default `30.0`)
-- `SIM_GT_WS_HOST` (default `0.0.0.0`)
-- `SIM_GT_WS_PORT` (default `8765`)
-- `SIM_FG_UDP_HOST` (default `127.0.0.1`)
-- `SIM_FG_UDP_PORT` (default `5503`)
+### Add a new vehicle
 
-If websocket output is enabled on multiple instances, use unique `SIM_GT_WS_PORT` values per instance.
+1. Create `src/vehicles/my_uav/`
+2. Add:
+   - `parameters.py`
+   - `forces.py`
+   - `initial_state.py`
+   - `definition.py`
+3. Expose:
+   - `make_parameters()`
+   - `make_force_models(parameters)`
+   - `make_initial_state(config)`
+4. Register the vehicle in `src/vehicles/vehicle_catalog.py`
+5. Run:
 
-FlightGear UDP mode publishes smooth ground-truth pose (not noisy GPS sensor output) as FGNetFDM v24 packets.
+```bash
+PYTHONPATH=src pytest src/test/test_vehicle_catalog.py
+```
 
-Example (FlightGear UDP output):
+### Rail launch
 
-- `SIM_VEHICLE_MODEL=iris SIM_GT_OUTPUT_MODE=flightgear_udp SIM_GT_OUTPUT_RATE_HZ=30 SIM_FG_UDP_HOST=127.0.0.1 SIM_FG_UDP_PORT=5503 python src/main.py`
+Rail launch can be enabled per vehicle. Relevant parameters live in each vehicle's `parameters.py`:
 
-Model selection example:
+- `rail_launch_enabled`
+- `rail_dir_ned`
+- `rail_start_ned`
+- `rail_length`
+- `rail_pull_max`
 
-- `SIM_VEHICLE_MODEL=iris python src/main.py`
+Runtime launch delay after arm is controlled by:
 
-### Docker
+- `SIM_CATAPULT_LAUNCH_COUNTDOWN_S` default `3.0`
 
-Build the image from the repo root:
+## Docker
 
-- `./docker/build.sh`
+Build the image:
 
-Run the default container setup:
+```bash
+./docker/build.sh
+```
 
-- `docker compose -f docker/docker-compose.yaml up`
+Run the default compose setup:
 
-The compose file runs the simulator in host-network mode so it can talk to a local PX4 SITL instance without extra port mapping.
+```bash
+docker compose -f docker/docker-compose.yaml up
+```
 
-Common settings live in `docker/docker-compose.yaml`:
+The compose file uses host networking so a local PX4 SITL instance can connect without additional port mapping.
 
-- `SIM_VEHICLE_MODEL` selects the simulated vehicle (default there is `ts06`)
-- `SIM_MAVLINK_BIND_HOST` / `SIM_MAVLINK_BIND_PORT` configure the MAVLink TCP listener
-- `SIM_GT_OUTPUT_MODE` selects `websocket`, `flightgear_udp`, or `off`
-- `SIM_GT_WS_PORT` configures the ground-truth websocket port
+Main settings in `docker/docker-compose.yaml`:
 
-Stop the container with:
+- `SIM_VEHICLE_MODEL`
+- `SIM_MAVLINK_BIND_HOST`
+- `SIM_MAVLINK_BIND_PORT`
+- `SIM_GT_OUTPUT_MODE`
+- `SIM_GT_WS_PORT`
 
-- `docker compose -f docker/docker-compose.yaml down`
+Stop it with:
 
-## Support Layout
+```bash
+docker compose -f docker/docker-compose.yaml down
+```
 
-- `support/examples/` contains runnable example scripts.
-- `support/tools/` contains helper scripts and the multi-UAV viewer.
-- `support/docs/src/` contains authored documentation sources.
-- `support/docs/build/` contains generated LaTeX build outputs.
-- `support/docs/references/` contains reference PDFs kept in the repository.
+## Multi-UAV Support
 
+The repository also includes a multi-UAV bridge and viewer.
 
-# Interactive Websocket visualization
+See:
 
-Go to https://cmb87.github.io/ and connect the simulator via websocket
+- `support/docs/src/multi-uav.md`
+- `support/tools/run_multi.sh`
+- `support/tools/viz/drone_viewer.html`
+
+## Tests
+
+Run the non-interactive test suite locally with:
+
+```bash
+PYTHONPATH=src pytest src/test
+```
+
+Interactive animation scripts live in `src/test/` too, but they are excluded from normal pytest collection through `pytest.ini`.
+
+## Technical Documentation
+
+Full technical documentation source:
+
+- `support/docs/src/architecture.tex`
+
+Build the PDF:
+
+```bash
+make -C support/docs/src
+```
+
+Output:
+
+- `support/docs/build/architecture.pdf`
+
+## Notes
+
+- Sensor noise is enabled by default to better match jMAVSim-like behavior.
+- The IMU path reconstructs accelerometer input from body-velocity derivative plus transport term to keep EKF behavior consistent.
