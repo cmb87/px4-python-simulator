@@ -17,8 +17,6 @@ If editable install fails in a ROS2 container with a `build_editable` error, upg
 - `python3 -m pip install --upgrade pip setuptools wheel build`
 - `python3 -m pip install -e . || python3 -m pip install .`
 
-For ROS2 dev containers, use `ros2_integration/ros2_ws/setup_ros2_dev.sh` to install apt and rosdep dependencies automatically.
-
 ## Architecture
 
 ```text
@@ -60,29 +58,29 @@ For ROS2 dev containers, use `ros2_integration/ros2_ws/setup_ros2_dev.sh` to ins
 
 Ground-truth side channel:
 
-vehicle.World -> main.py -> GroundTruth WS -> ground_truth_ws_visualizer.py
+vehicle.World -> main.py -> GroundTruth WS -> src/test/ground_truth_ws_visualizer.py
 ```
 
 ## Vehicle Models
 
-Vehicle-specific setup lives in `src/vehicle/vehicles/<name>/`, and model selection lives in `src/vehicle/vehicle_catalog.py`.
+Vehicle-specific setup lives in `src/vehicles/<name>/`, and model selection lives in `src/vehicles/vehicle_catalog.py`.
 
 Default models:
 
 - `x8`
 - `iris`
 
-`vehicle/world.py` is model-agnostic: it resolves parameters, force models, and default initial state via the vehicle catalog.
+`src/dynamics/world.py` is model-agnostic: it resolves parameters, force models, and default initial state via the vehicle catalog.
 
 ### Add a New Vehicle
 
-1. Add a vehicle folder under `src/vehicle/vehicles/` (for example `src/vehicle/vehicles/my_uav/`) with:
+1. Add a vehicle folder under `src/vehicles/` (for example `src/vehicles/my_uav/`) with:
    - `parameters.py`
    - `forces.py`
    - `initial_state.py`
    - `definition.py` exposing `make_parameters()`, `make_force_models(parameters)`, and `make_initial_state(config)`
-   - optionally reuse shared force blocks from `src/vehicle/vehicles/common_forces/`
-2. Register it explicitly in `src/vehicle/vehicle_catalog.py` by adding one entry to `VEHICLES`.
+   - optionally reuse shared force blocks from `src/vehicles/common_forces/`
+2. Register it explicitly in `src/vehicles/vehicle_catalog.py` by adding one entry to `VEHICLES`.
 3. Run tests (`pytest src/test/test_vehicle_catalog.py`) to verify catalog wiring and one-step world execution.
 
 ### Optional Rail Launch (All Vehicles)
@@ -107,7 +105,7 @@ Runtime launch delay after arm is controlled by env var:
 At runtime, model integration happens in this order:
 
 1. `src/main.py` reads `SIM_VEHICLE_MODEL` and creates `World(vehicle_model=...)`.
-2. `vehicle/world.py` resolves model-specific pieces from the catalog:
+2. `src/dynamics/world.py` resolves model-specific pieces from the catalog:
    - parameters via the model spec
    - force model list via the model spec
    - default initial state via the model spec
@@ -117,7 +115,7 @@ At runtime, model integration happens in this order:
    - runs `SensorSuite` from updated state and state derivative
 4. `src/main.py` publishes sensor outputs to PX4 via MAVLink HIL messages.
 
-This keeps vehicle specifics inside `vehicle/vehicles/<name>/*`, while `vehicle/world.py` stays vehicle-agnostic.
+This keeps vehicle specifics inside `src/vehicles/<name>/*`, while `src/dynamics/world.py` stays vehicle-agnostic.
 
 ### Select Model
 
