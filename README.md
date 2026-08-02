@@ -236,6 +236,7 @@ What it gives you:
 - a pinhole camera model through `perception.PinholeCamera`
 - projection from NED world points into an ego-mounted camera
 - visibility, pixel coordinates, and depth for each target point
+- direct two-vehicle geometry by treating one vehicle as the camera carrier and the other as the target
 
 What it does not do yet:
 
@@ -258,6 +259,54 @@ measurement = camera.project_world_point(
 )
 print(measurement.visible, measurement.pixel, measurement.depth_m)
 ```
+
+### Render one vehicle from another vehicle's camera
+
+For two vehicles, the camera model uses:
+
+1. the target vehicle position as `point_ned`
+2. the ego vehicle position as `ego_position_ned`
+3. the ego vehicle attitude as `ego_quaternion_wxyz`
+
+That means you can compute what vehicle A sees of vehicle B, and also what vehicle B sees of vehicle A, from their two simulator states.
+
+Example:
+
+```python
+from perception import PinholeCamera
+
+camera = PinholeCamera(width=640, height=480, fx=400.0, fy=400.0)
+
+cam0_sees_1 = camera.project_world_point(
+    point_ned=state1[0:3],
+    ego_position_ned=state0[0:3],
+    ego_quaternion_wxyz=state0[3:7],
+)
+cam1_sees_0 = camera.project_world_point(
+    point_ned=state0[0:3],
+    ego_position_ned=state1[0:3],
+    ego_quaternion_wxyz=state1[3:7],
+)
+```
+
+This returns, for each camera view:
+
+- `visible` whether the other vehicle is inside the image and in front of the camera
+- `pixel` the projected image coordinates
+- `depth_m` the forward distance in the camera frame
+
+There is already a minimal two-vehicle example in:
+
+- `PYTHONPATH=src python support/examples/two_x8_two_websockets.py`
+
+That example:
+
+- runs two independent `Px4SimEnv` instances
+- steps both vehicles forward
+- projects each vehicle into the other vehicle's camera
+- opens simple OpenCV windows that show the projected target location
+
+There is also a unit test covering the same geometry in `src/test/test_camera_projection.py`.
 
 ### How to add a camera to your workflow
 
