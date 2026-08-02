@@ -265,6 +265,29 @@ Model selection example:
 
 - `SIM_VEHICLE_MODEL=iris python src/main.py`
 
+### Docker
+
+Build the image from the repo root:
+
+- `./docker/build.sh`
+
+Run the default container setup:
+
+- `docker compose -f docker/docker-compose.yaml up`
+
+The compose file runs the simulator in host-network mode so it can talk to a local PX4 SITL instance without extra port mapping.
+
+Common settings live in `docker/docker-compose.yaml`:
+
+- `SIM_VEHICLE_MODEL` selects the simulated vehicle (default there is `ts06`)
+- `SIM_MAVLINK_BIND_HOST` / `SIM_MAVLINK_BIND_PORT` configure the MAVLink TCP listener
+- `SIM_GT_OUTPUT_MODE` selects `websocket`, `flightgear_udp`, or `off`
+- `SIM_GT_WS_PORT` configures the ground-truth websocket port
+
+Stop the container with:
+
+- `docker compose -f docker/docker-compose.yaml down`
+
 
 # Interactive Websocket visualization
 
