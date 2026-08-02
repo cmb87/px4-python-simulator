@@ -194,13 +194,13 @@ For parallel RL training, keep websocket disabled or assign a unique port to eac
 
 X8 websocket debug example:
 
-- Run: `PYTHONPATH=src python examples/x8_rl_websocket.py`
+- Run: `PYTHONPATH=src python support/examples/x8_rl_websocket.py`
 - Connect the visualizer to `ws://127.0.0.1:8765`
 - The example starts the X8 already airborne with `launch_mode="airborne"`, so the catapult rail switch is skipped.
 
 Two independent X8 vehicles with two websocket outputs:
 
-- Run: `PYTHONPATH=src python examples/two_x8_two_websockets.py`
+- Run: `PYTHONPATH=src python support/examples/two_x8_two_websockets.py`
 - Connect one visualizer to `ws://127.0.0.1:8765` for `system_id=1`
 - Connect another visualizer to `ws://127.0.0.1:8766` for `system_id=2`
 - This uses two independent `Px4SimEnv` instances, not coupled multi-vehicle physics.
@@ -222,10 +222,10 @@ print(measurement.visible, measurement.pixel, measurement.depth_m)
 
 ## Technical Documentation (LaTeX)
 
-A full architecture document is available at `docs/architecture.tex`.
+A full architecture document is available at `support/docs/src/architecture.tex`.
 
-- Build PDF: `make -C docs`
-- Output: `docs/architecture.pdf`
+- Build PDF: `make -C support/docs/src`
+- Output: `support/docs/build/architecture.pdf`
 
 The document covers:
 
@@ -236,7 +236,7 @@ The document covers:
 
 ## Run
 
-- Optional ground-truth view: `python ground_truth_ws_visualizer.py --host 127.0.0.1 --port 8765`
+- Optional ground-truth view: `python src/test/ground_truth_ws_visualizer.py --host 127.0.0.1 --port 8765`
 
 ### Start
 
@@ -287,6 +287,14 @@ Common settings live in `docker/docker-compose.yaml`:
 Stop the container with:
 
 - `docker compose -f docker/docker-compose.yaml down`
+
+## Support Layout
+
+- `support/examples/` contains runnable example scripts.
+- `support/tools/` contains helper scripts and the multi-UAV viewer.
+- `support/docs/src/` contains authored documentation sources.
+- `support/docs/build/` contains generated LaTeX build outputs.
+- `support/docs/references/` contains reference PDFs kept in the repository.
 
 
 # Interactive Websocket visualization

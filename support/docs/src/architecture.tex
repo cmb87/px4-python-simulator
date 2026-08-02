@@ -775,11 +775,11 @@ print(out["sensors"])   # synthesized sensors
 \section{Build and Use}
 The document can be built with:
 \begin{verbatim}
-make -C docs
+make -C support/docs/src
 \end{verbatim}
 or directly:
 \begin{verbatim}
-pdflatex -output-directory docs docs/architecture.tex
+pdflatex -output-directory support/docs/build support/docs/src/architecture.tex
 \end{verbatim}
 
 \end{document}

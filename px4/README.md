@@ -56,12 +56,10 @@ This will start with the new vehicle. Start the simulator in the repo root direc
 
 or simply run 
 
-    start_ts06_websocket.sh
+    SIM_VEHICLE_MODEL=ts06 SIM_GT_OUTPUT_MODE=websocket python3 src/main.py
 
 for convience.
 
 # 3D live flight visualization
 
-Go to **https://cmb87.github.io/** and select the simulator tab. Connect via websocket to the simulator and enjoy. Note the websocket must be activated (it is when you start with start_ts06_websocket.sh).
-
-
+Go to **https://cmb87.github.io/** and select the simulator tab. Connect via websocket to the simulator and enjoy. Note the websocket must be activated (for example by starting the simulator with `SIM_VEHICLE_MODEL=ts06 SIM_GT_OUTPUT_MODE=websocket python3 src/main.py`).

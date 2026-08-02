@@ -2,16 +2,16 @@
 # Launch N PX4 (none_iris) SITL instances + the multi-vehicle Python bridge (one
 # process, one shared clock). Then optionally run the offboard demo to fly them.
 #
-#   N=4 bash tools/run_multi.sh              # bridge + 4 PX4, drones sit on the ground
-#   N=4 bash tools/run_multi.sh --fly        # also arm + take off + hover (offboard_demo)
-#   N=4 SIM_DEMO=orbit bash tools/run_multi.sh --fly
+#   N=4 bash support/tools/run_multi.sh              # bridge + 4 PX4, drones sit on the ground
+#   N=4 bash support/tools/run_multi.sh --fly        # also arm + take off + hover (offboard_demo)
+#   N=4 SIM_DEMO=orbit bash support/tools/run_multi.sh --fly
 #
-# Open viz/drone_viewer.html and connect to ws://localhost:8766 to watch.
+# Open support/tools/viz/drone_viewer.html and connect to ws://localhost:8766 to watch.
 # PX4-Autopilot location: set PX4_AUTOPILOT (default ~/PX4-Autopilot). Build SITL once with
 #   cd ~/PX4-Autopilot && make px4_sitl_default
 set -u
 PX4="${PX4_AUTOPILOT:-$HOME/PX4-Autopilot}"
-SIM="$(cd "$(dirname "$0")/.." && pwd)"
+SIM="$(cd "$(dirname "$0")/../.." && pwd)"
 PY="${SIM_PYTHON:-python3}"   # point at a venv with numpy+pymavlink+websockets if needed
 N="${N:-4}"
 BR_LOG=/tmp/bridge_multi.log
@@ -53,7 +53,7 @@ for I in $(seq 0 $((N-1))); do
   sleep 1
 done
 echo "launched: bridge=$BR_LOG  px4=/tmp/px4_{0..$((N-1))}.log"
-echo "viewer: open viz/drone_viewer.html -> connect ws://localhost:8766"
+echo "viewer: open support/tools/viz/drone_viewer.html -> connect ws://localhost:8766"
 
 # 3) optionally fly them
 if [ "$FLY" = "1" ]; then

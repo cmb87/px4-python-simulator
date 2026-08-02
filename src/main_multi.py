@@ -19,7 +19,7 @@ Env:
   SIM_GT_OUTPUT_MODE=websocket  per-drone ground-truth output (websocket|off)
   SIM_GT_WS_PORT=8765           one shared websocket; drones keyed by system_id
   SIM_GT_OUTPUT_RATE_HZ=30
-  SIM_VIZ_ENABLE=1              scene stream for viz/drone_viewer.html
+  SIM_VIZ_ENABLE=1              scene stream for support/tools/viz/drone_viewer.html
   SIM_VIZ_WS_PORT=8766
   SIM_VIZ_RECORD=path.jsonl     also record every scene frame for offline playback
   SIM_TELEM=path.csv            per-drone truth CSV (diagnostics)
@@ -287,7 +287,7 @@ def simulation_main() -> None:
                 cmd = viz.pop("cmd")
                 if cmd is not None and cmd.get("cmd") == "shutdown":
                     logger.info("shutdown requested from the viewer; exiting bridge "
-                                "(PX4 instances keep running; tools/stop.sh for full teardown).")
+                                "(PX4 instances keep running; support/tools/stop.sh for full teardown).")
                     break
                 next_heartbeat_us = sim_time_us + HEARTBEAT_INTERVAL_US
                 if telem_f is not None:

@@ -2,9 +2,10 @@
 
 # Get the directory of this script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # Define paths relative to the script directory
-VENV_ACTIVATE="${SCRIPT_DIR}/../../.venv/bin/activate"
+VENV_ACTIVATE="${REPO_ROOT}/.venv/bin/activate"
 
 # Verify virtual environment exists
 if [ ! -f "$VENV_ACTIVATE" ]; then
@@ -32,7 +33,7 @@ trap cleanup INT TERM EXIT
 
 # Start Python Simulator
 echo "Starting Python Simulator (Model: x8, Output: WebSocket)..."
-cd "${SCRIPT_DIR}" || exit 1
+cd "${REPO_ROOT}" || exit 1
 source "$VENV_ACTIVATE"
 python src/main.py &
 SIM_PID=$!

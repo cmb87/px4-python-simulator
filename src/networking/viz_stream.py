@@ -2,7 +2,7 @@
 
 Publishes the whole scene (per-drone poses, plus any annotation a client injects)
 as JSON frames at a fixed SIM-time rate, for the self-contained viewer page
-`viz/drone_viewer.html`. It runs alongside (not instead of) the per-drone
+`support/tools/viz/drone_viewer.html`. It runs alongside (not instead of) the per-drone
 ground-truth stream in `websocket_publisher.py`: separate port, separate schema.
 
 Messages (server -> viewer):
@@ -72,7 +72,7 @@ class VizStream:
             return
         self._thread = threading.Thread(target=self._thread_main, daemon=True)
         self._thread.start()
-        logger.info("viz stream on ws://%s:%d (viewer: viz/drone_viewer.html)", self.host, self.port)
+        logger.info("viz stream on ws://%s:%d (viewer: support/tools/viz/drone_viewer.html)", self.host, self.port)
 
     def stop(self) -> None:
         if self._rec is not None:
