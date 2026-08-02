@@ -46,7 +46,6 @@ GT_OUTPUT_RATE_HZ_RAW = os.getenv("SIM_GT_OUTPUT_RATE_HZ", "30.0")
 FG_UDP_HOST = os.getenv("SIM_FG_UDP_HOST", "127.0.0.1")
 FG_UDP_PORT = int(os.getenv("SIM_FG_UDP_PORT", "5503"))
 VEHICLE_MODEL = os.getenv("SIM_VEHICLE_MODEL", "x8").strip().lower()
-TS04_PITCH90_START = os.getenv("SIM_TS04_PITCH90_START", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 logger = logging.getLogger(__name__)
@@ -82,7 +81,6 @@ def simulation_main() -> None:
         vehicle_model=vehicle_model,
         u0=np.zeros(4),
         wind0=np.zeros(6),
-        ts04_pitch90_start=TS04_PITCH90_START,
     )
     catapult_enabled = bool(getattr(world, "rail_launch_enabled", False))
     catapult_countdown_s = max(0.0, parse_env_float("SIM_CATAPULT_LAUNCH_COUNTDOWN_S", 3.0))

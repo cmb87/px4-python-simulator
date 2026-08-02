@@ -125,15 +125,10 @@ Use `SIM_VEHICLE_MODEL`:
 
 - `SIM_VEHICLE_MODEL=x8` (default)
 - `SIM_VEHICLE_MODEL=iris`
-- `SIM_VEHICLE_MODEL=ts04`
+- `SIM_VEHICLE_MODEL=ts06`
 - `SIM_GPS_LAT` / `SIM_GPS_LON` / `SIM_GPS_ALT` set GPS origin for all models.
   Legacy names `SIM_GPS_ORIGIN_LAT` / `SIM_GPS_ORIGIN_LON` / `SIM_GPS_ORIGIN_ALT` are still accepted.
   Defaults: `47.397742`, `8.545594`, `470.0`.
-
-TS04 optional startup attitude toggle:
-
-- `SIM_TS04_PITCH90_START=1` starts the model at +90 deg pitch attitude.
-- Default is off (`SIM_TS04_PITCH90_START=0`).
 - MAVLink (`HIL_STATE_QUATERNION`) and ground-truth websocket always publish raw simulation attitude.
 - Ground-truth websocket payload includes `aero.alpha_deg` and `aero.beta_deg` (set to `null` when airspeed is too low).
 
@@ -235,7 +230,7 @@ A full architecture document is available at `docs/architecture.tex`.
 The document covers:
 
 - 6DOF dynamics kernel
-- vehicle models (`iris`, `x8`, `ts04`)
+- vehicle models (`iris`, `x8`, `ts06`)
 - sensor and force models
 - MAVLink HIL and external interfaces (WebSocket/FlightGear ground truth)
 

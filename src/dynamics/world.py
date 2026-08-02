@@ -22,14 +22,11 @@ class World(SimComponentBase):
         z_ground=100.0,
         force_models=None,
         vehicle_model="x8",
-        ts04_pitch90_start=False,
         model_options=None,
     ):
         super().__init__()
         self.vehicle_model = str(vehicle_model).strip().lower()
         self.model_options = {} if model_options is None else dict(model_options)
-        if "ts04_pitch90_start" not in self.model_options:
-            self.model_options["ts04_pitch90_start"] = bool(ts04_pitch90_start)
 
         self._vehicle_def = get_vehicle_definition(self.vehicle_model)
         self.P = self._vehicle_def.make_parameters() if parameters is None else parameters
